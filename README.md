@@ -31,6 +31,8 @@ Selection capture first uses Accessibility, enabling the accessibility tree for 
 Requires macOS 15+, Apple Silicon, Node 22+, CMake 3.24+, and Xcode Command Line Tools for building. Install CMake with `brew install cmake`, or set `CMAKE` to its executable path. The installed native commands do not need Node or Raycast running.
 
 ```sh
+brew install cmake
+cmake --version # Must be 3.24 or newer.
 npm ci --ignore-scripts
 npm run setup
 npm run build:selection
@@ -67,6 +69,8 @@ The native app and the two Tinycast Custom Commands are the complete installatio
 Setup downloads the pinned llama.cpp **b11461** source archive and Qwen3.5-4B Q4_K_M GGUF weights, verifying both with SHA-256. Build compiles static runtime libraries, including chat utilities and embedded Metal shaders; subsequent builds reuse the CMake build cache. Allow roughly 2.74 GB for the model plus the runtime. Existing verified downloads are reused. Model weights stay in `models/`, outside the app bundle.
 
 `npm run build` produces only `dist/GrammarNazi.app`, the command installer, and manual command instructions. It clears old generated extension files and app bundles first. If you rename or move the project directory, rebuild and reinstall so the app records the model's new absolute path.
+
+If `npm run build:selection` reports **CMake 3.24+ is required**, install it with `brew install cmake` and confirm `cmake --version` works in the same shell, then rerun the build. On Apple Silicon, Homebrew normally provides `/opt/homebrew/bin/cmake`; ensure `/opt/homebrew/bin` is on your `PATH`. For a custom installation, use `CMAKE=/absolute/path/to/cmake npm run build:selection`. The prebuilt app runs without CMake because llama.cpp is already compiled into its executable; CMake is needed only to build it.
 
 Qwen generates corrections and rewrites directly, with thinking disabled. There is no embedding model or retrieval step. Input is limited to 12,000 UTF-16 units. Incomplete output is rejected. Editing quality depends on the model and language.
 
