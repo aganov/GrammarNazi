@@ -12,7 +12,7 @@ GGUF conversion by Unsloth:
 https://huggingface.co/unsloth/Qwen3.5-4B-GGUF
 
 The setup script retrieves the llama.cpp license and retains licenses included in its release archive.
-Model weights are downloaded separately and are not distributed inside this extension.
+Model weights are downloaded separately and are not distributed inside the app.
 
 DigUp was studied as a reference for local GGUF inference and model lifecycle.
 https://github.com/ARahim3/DigUp

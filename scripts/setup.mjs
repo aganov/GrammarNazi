@@ -18,7 +18,7 @@ async function hash(path) {
 async function download(url, destination, expected) {
   try { if (expected && await hash(destination) === expected) { console.log(`Verified ${destination}`); return; } } catch { /* Not downloaded. */ }
   console.log(`Downloading ${destination}`);
-  const response = await fetch(url, { headers: { "User-Agent": "grammarly-local-setup" }, signal: AbortSignal.timeout(30 * 60 * 1000) });
+  const response = await fetch(url, { headers: { "User-Agent": "grammarnazi-setup" }, signal: AbortSignal.timeout(30 * 60 * 1000) });
   if (!response.ok || !response.body) throw new Error(`Download failed: HTTP ${response.status} for ${url}`);
   const partial = destination + ".partial";
   try {
@@ -40,7 +40,7 @@ const stamp = `vendor/llama/${tag}.stamp`;
 let installed = false;
 try { await access(stamp); await access("vendor/llama/llama-server"); installed = true; } catch {}
 if (!installed) {
-  const release = await fetch(`https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/${tag}`, { headers: { "User-Agent": "grammarly-local-setup" } });
+  const release = await fetch(`https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/${tag}`, { headers: { "User-Agent": "grammarnazi-setup" } });
   if (!release.ok) throw new Error(`Could not read llama.cpp release: HTTP ${release.status}`);
   const metadata = await release.json();
   const asset = metadata.assets.find((a) => /macos-arm64\.(tar\.gz|zip)$/.test(a.name));
@@ -63,6 +63,6 @@ if (!installed) {
 if (!process.argv.includes("--runtime-only")) {
   await mkdir("models", { recursive: true });
   for (const model of models) await download(`https://huggingface.co/${model.repo}/resolve/${model.revision}/${model.file}`, join("models", model.file), model.sha256);
-  console.log(`Models Folder preference: ${resolve("models")}`);
+  console.log(`Model directory: ${resolve("models")}`);
 }
 console.log("Setup complete. Run npm run build.");

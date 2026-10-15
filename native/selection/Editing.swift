@@ -111,7 +111,7 @@ final class EditingJob: @unchecked Sendable {
         let stderr = try FileHandle(forWritingTo: error)
         defer { try? stdout.close(); try? stderr.close() }
         let child = Process()
-        child.executableURL = resources.appendingPathComponent("grammarly-helper")
+        child.executableURL = resources.appendingPathComponent("grammarnazi-helper")
         child.arguments = [resources.appendingPathComponent("llama/llama-server").path, model.path, input.path]
         child.standardInput = FileHandle.nullDevice
         child.standardOutput = stdout

@@ -1,18 +1,25 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, cp, writeFile } from "node:fs/promises";
+import { mkdir, cp, writeFile, access, rm } from "node:fs/promises";
 import { resolve, join } from "node:path";
+import { tmpdir } from "node:os";
 
 if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("Build on an Apple Silicon Mac.");
+// Build only the native app; old extension bundles must not remain importable.
+await access("vendor/llama/llama-server").catch(() => { throw new Error("Run npm run setup before building."); });
+await access("models/Qwen3.5-4B-Q4_K_M.gguf").catch(() => { throw new Error("Run npm run setup before building."); });
+await rm("dist", { recursive: true, force: true });
 const app = "dist/GrammarNazi.app";
 const resources = join(app, "Contents/Resources");
 await mkdir(join(app, "Contents/MacOS"), { recursive: true });
 await mkdir(resources, { recursive: true });
-await mkdir("vendor/swift-cache", { recursive: true });
-const flags = ["-O", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", resolve("vendor/swift-cache")];
+// Keep the module cache at a stable path when the project directory is renamed.
+const swiftCache = join(tmpdir(), "grammarnazi-swift-cache");
+await mkdir(swiftCache, { recursive: true });
+const flags = ["-O", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", swiftCache];
 execFileSync("/usr/bin/xcrun", ["swiftc", ...flags, "native/selection/Markdown.swift", "native/selection/Editing.swift", "native/selection/MarkdownPreview.swift", "native/selection/Selection.swift", "native/selection/SelectionApp.swift", "-o", join(app, "Contents/MacOS/GrammarNazi")], { stdio: "inherit" });
 execFileSync("/usr/bin/xcrun", ["swiftc", ...flags, "native/selection/Markdown.swift", "native/selection/Editing.swift", "native/selection/CustomCommands.swift", "native/selection/InstallCommands.swift", "-o", "dist/install-commands"], { stdio: "inherit" });
-await cp("dist/assets/grammarly-helper", join(resources, "grammarly-helper"));
-await cp("dist/assets/llama", join(resources, "llama"), { recursive: true, dereference: true });
+execFileSync("/usr/bin/xcrun", ["swiftc", ...flags, "native/Helper.swift", "-o", join(resources, "grammarnazi-helper")], { stdio: "inherit" });
+await cp("vendor/llama", join(resources, "llama"), { recursive: true, dereference: true });
 await cp("assets/editing-rules.json", join(resources, "editing-rules.json"));
 await cp("assets/Acknowledgements.txt", join(resources, "Acknowledgements.txt"));
 await cp("LICENSE", join(resources, "LICENSE"));
@@ -24,8 +31,8 @@ await writeFile(join(app, "Contents/Info.plist"), `<?xml version="1.0" encoding=
 <key>CFBundleName</key><string>GrammarNazi</string>
 <key>CFBundleExecutable</key><string>GrammarNazi</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>1.2.0</string>
-<key>CFBundleVersion</key><string>3</string>
+<key>CFBundleShortVersionString</key><string>1.2.1</string>
+<key>CFBundleVersion</key><string>4</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>

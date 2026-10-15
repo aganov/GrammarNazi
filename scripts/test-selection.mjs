@@ -1,13 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
+import { tmpdir } from "node:os";
 
-await mkdir("vendor/swift-cache", { recursive: true });
-execFileSync("/usr/bin/xcrun", ["swiftc", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", resolve("vendor/swift-cache"), "native/selection/Markdown.swift", "native/selection/Editing.swift", "native/selection/CustomCommands.swift", "tests/selection_core.swift", "-o", "vendor/selection-core-tests"], { stdio: "inherit" });
+const swiftCache = join(tmpdir(), "grammarnazi-swift-cache");
+await mkdir(swiftCache, { recursive: true });
+execFileSync("/usr/bin/xcrun", ["swiftc", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", swiftCache, "native/selection/Markdown.swift", "native/selection/Editing.swift", "native/selection/CustomCommands.swift", "tests/selection_core.swift", "-o", "vendor/selection-core-tests"], { stdio: "inherit" });
 execFileSync(resolve("vendor/selection-core-tests"), [], { stdio: "inherit" });
 if (process.argv.includes("--models")) {
-  execFileSync("/usr/bin/xcrun", ["swiftc", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", resolve("vendor/swift-cache"), "native/selection/Markdown.swift", "native/selection/Editing.swift", "tests/selection_models.swift", "-o", "vendor/selection-model-tests"], { stdio: "inherit" });
+  execFileSync("/usr/bin/xcrun", ["swiftc", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", swiftCache, "native/selection/Markdown.swift", "native/selection/Editing.swift", "tests/selection_models.swift", "-o", "vendor/selection-model-tests"], { stdio: "inherit" });
   execFileSync(resolve("vendor/selection-model-tests"), [resolve("dist/GrammarNazi.app/Contents/Resources")], { stdio: "inherit" });
 }
 if (process.argv.includes("--preview")) {

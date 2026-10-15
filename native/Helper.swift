@@ -31,7 +31,7 @@ final class ChildOwner: @unchecked Sendable {
 
 let owner = ChildOwner()
 let parent = getppid()
-let signalQueue = DispatchQueue(label: "grammarly.cleanup")
+let signalQueue = DispatchQueue(label: "grammarnazi.cleanup")
 var signalSources: [DispatchSourceSignal] = []
 for number in [SIGTERM, SIGINT, SIGHUP] {
     signal(number, SIG_IGN)
@@ -92,13 +92,13 @@ func request(_ session: URLSession, _ url: URL, token: String, body: Data? = nil
 }
 
 func run() throws {
-    guard CommandLine.arguments.count == 4 else { throw Failure("Usage: grammarly-helper SERVER MODEL REQUEST_FILE") }
+    guard CommandLine.arguments.count == 4 else { throw Failure("Usage: grammarnazi-helper SERVER MODEL REQUEST_FILE") }
     let args = CommandLine.arguments
     guard FileManager.default.isExecutableFile(atPath: args[1]) else { throw Failure("llama-server is missing or not executable. Run npm run setup and rebuild.") }
-    guard FileManager.default.fileExists(atPath: args[2]) else { throw Failure("The GGUF model is missing. Check the Models Folder preference.") }
+    guard FileManager.default.fileExists(atPath: args[2]) else { throw Failure("The GGUF model is missing. Rebuild and reinstall the app after moving the project or model.") }
     let body = try Data(contentsOf: URL(fileURLWithPath: args[3]))
     guard body.count <= 256_000, (try JSONSerialization.jsonObject(with: body)) is [String: Any] else { throw Failure("Invalid inference request.") }
-    let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("grammarly-helper-\(UUID().uuidString)")
+    let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("grammarnazi-helper-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     owner.setTemporary(temporary)
     defer { try? FileManager.default.removeItem(at: temporary) }

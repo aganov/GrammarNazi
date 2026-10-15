@@ -1,4 +1,5 @@
-import { cp, mkdir, access, rename } from "node:fs/promises";
+import { cp, mkdir, access, rename, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
@@ -12,12 +13,21 @@ await access("dist/GrammarNazi.app/Contents/MacOS/GrammarNazi");
 await access("models/Qwen3.5-4B-Q4_K_M.gguf");
 await mkdir(destination, { recursive: true, mode: 0o700 });
 await mkdir(dataFolder, { recursive: true, mode: 0o700 });
-// Keep a complete first-install backup of a previous native app if one exists.
+// Verify a fresh bundle before replacing the installed directory. Merging app
+// folders leaves obsolete executables behind and breaks the resource signature.
 let previousApp = false, backupExists = false;
 try { await access(app); previousApp = true; } catch {}
 try { await access(join(dataFolder, "previous-app")); backupExists = true; } catch {}
-if (previousApp && !backupExists) await cp(app, join(dataFolder, "previous-app"), { recursive: true });
-await cp("dist/GrammarNazi.app", app, { recursive: true, dereference: true });
+const staging = join(destination, `.GrammarNazi-install-${randomUUID()}.app`);
+const previous = join(dataFolder, backupExists ? `.replaced-app-${randomUUID()}` : "previous-app");
+try {
+  await cp("dist/GrammarNazi.app", staging, { recursive: true, dereference: true });
+  execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", staging], { stdio: "inherit" });
+  if (previousApp) await rename(app, previous);
+  try { await rename(staging, app); }
+  catch (error) { if (previousApp) await rename(previous, app); throw error; }
+} finally { await rm(staging, { recursive: true, force: true }); }
+if (previousApp && backupExists) await rm(previous, { recursive: true, force: true });
 execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", app], { stdio: "inherit" });
 execFileSync(resolve("dist/install-commands"), [app, join(dataFolder, "tinycast-custom-commands-backup.json")], { stdio: "inherit" });
 let legacyExists = false;

@@ -9,7 +9,7 @@ import tempfile
 import time
 import unittest
 
-HELPER = Path(__file__).resolve().parents[1] / "dist/assets/grammarly-helper"
+HELPER = Path(__file__).resolve().parents[1] / "dist/GrammarNazi.app/Contents/Resources/grammarnazi-helper"
 SERVER = r'''
 import http.server, json, os, pathlib, sys, time
 args = sys.argv[1:]
@@ -39,7 +39,7 @@ http.server.HTTPServer((arg("--host"), int(arg("--port"))), Handler).serve_forev
 
 class HelperTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="grammarly-helper-test-")
+        self.tmp = tempfile.TemporaryDirectory(prefix="grammarnazi-helper-test-")
         self.folder = Path(self.tmp.name)
         self.server = self.folder / "fake-server"
         self.server.write_text("#!" + sys.executable + "\n" + SERVER)
