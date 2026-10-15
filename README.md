@@ -1,4 +1,4 @@
-![GrammarNazi cover with bold white lettering, quotation marks, and a red proofreading underline on black](assets/grammarnazi-cover.png)
+![GrammarNazi cover with bold white lettering, angular white accents, and a red proofreading underline on black](assets/grammarnazi-cover.png)
 
 # GrammarNazi
 
