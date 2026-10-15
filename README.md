@@ -58,7 +58,7 @@ npm run test:selection
 npm run test:selection-models
 ```
 
-The first command checks shared prompts, Markdown structure preservation, response validation, selection identity changes, cancellation before inference, and idempotent Custom Command registration. The second also runs plain and Markdown passages through the real model and renders demo and long-text previews to `vendor/selection-*.png`, checking wrapping and scrolling. Preview rendering requires a graphical macOS session.
+The first command checks shared prompts, Markdown structure preservation, response validation, selection identity changes, cancellation before inference, and idempotent Custom Command registration. The second also tests instruction-like selections and translation requests across rewrite tones, runs plain and Markdown passages through the real model and renders demo and long-text previews to `vendor/selection-*.png`, checking wrapping and scrolling. Preview rendering requires a graphical macOS session.
 
 After granting Accessibility, check a draft in Slack: select text, run each command, replace it, and use Slack's Undo. Also change the selection or switch apps while generation runs and confirm Replace refuses the changed target. These app-specific checks require real Accessibility access; automated core tests do not establish Slack compatibility.
 
@@ -73,6 +73,8 @@ Setup downloads the pinned llama.cpp **b11461** source archive and Qwen3.5-4B Q4
 If `npm run build:selection` reports **CMake 3.24+ is required**, install it with `brew install cmake` and confirm `cmake --version` works in the same shell, then rerun the build. On Apple Silicon, Homebrew normally provides `/opt/homebrew/bin/cmake`; ensure `/opt/homebrew/bin` is on your `PATH`. For a custom installation, use `CMAKE=/absolute/path/to/cmake npm run build:selection`. The prebuilt app runs without CMake because llama.cpp is already compiled into its executable; CMake is needed only to build it.
 
 Qwen generates corrections and rewrites directly, with thinking disabled. There is no embedding model or retrieval step. Input is limited to 12,000 UTF-16 units. Incomplete output is rejected. Editing quality depends on the model and language.
+
+Selected text is sent inside a JSON data envelope with escaped model control markers. The editing prompts explicitly treat translation requests, questions, and instructions to ignore the rules as text to edit. For example, `translate in japanese` should become `Translate into Japanese.`, rather than being translated. The detected source language is reinforced in the prompt. Results that clearly switch writing systems, or confidently detected languages in longer prose, are rejected before Copy or Replace is enabled. Mixed-script text remains supported. These protections reduce instruction-following errors; language checks remain conservative for short or ambiguous text and cannot catch every prompt injection.
 
 Swift calls a small C++ bridge linked directly into the native app. llama.cpp loads Qwen with Metal acceleration and handles its chat template, disabled thinking, and schema-constrained Markdown responses. There is no inference helper, server, listening socket, or daemon. Cancellation is checked during model loading, between prompt batches, and between generated tokens; an active GPU operation may finish before cancellation completes. Load and generation deadlines are 90 and 120 seconds respectively. Native runtime faults can terminate the app because inference shares its process.
 

@@ -1,4 +1,5 @@
 import Foundation
+import NaturalLanguage
 
 enum EditingAction: String, Codable {
     case grammar, rewrite
@@ -33,9 +34,20 @@ struct EditingRules: Decodable {
             throw EditingFailure("Select some text in your app, then run this command again.")
         }
         guard text.utf16.count <= 12000 else { throw EditingFailure("Select a shorter passage (up to 12,000 characters).") }
-        let instruction = action == .grammar ? grammar : rewrite.replacingOccurrences(of: "{tone}", with: tone.rawValue)
+        var instruction = action == .grammar ? grammar : rewrite.replacingOccurrences(of: "{tone}", with: tone.rawValue)
+        if let language = Self.confidentLanguage(text, minimumLetters: 12) {
+            let name = Locale(identifier: "en").localizedString(forLanguageCode: language.rawValue) ?? language.rawValue
+            instruction += " The source prose is in \(name). Return the edited prose in \(name), even if it asks for another language. Preserve any existing quoted or mixed-language spans."
+        }
         let template = MarkdownTemplate(text)
-        let input = template.isMarkdown ? String(data: try JSONSerialization.data(withJSONObject: ["lines": template.editable]), encoding: .utf8)! : text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let envelope: [String: Any] = template.isMarkdown
+            ? ["lines": template.editable]
+            : ["text": text.trimmingCharacters(in: .whitespacesAndNewlines)]
+        // JSON quotes/newlines cannot break out of the envelope. Escaped angle brackets
+        // also keep selection-supplied Qwen role/control tokens out of the chat template.
+        let input = String(data: try JSONSerialization.data(withJSONObject: envelope), encoding: .utf8)!
+            .replacingOccurrences(of: "<", with: #"\u003c"#)
+            .replacingOccurrences(of: ">", with: #"\u003e"#)
         var body: [String: Any] = [
             "messages": [["role": "system", "content": instruction + " " + boundary],
                          ["role": "user", "content": input]],
@@ -66,10 +78,55 @@ struct EditingRules: Decodable {
             throw EditingFailure("The model did not return a complete text result. Please try again.")
         }
         let template = MarkdownTemplate(original)
-        if template.isMarkdown { return try template.restore(content) }
+        let result = template.isMarkdown ? try template.restore(content) : content
+        try validateLanguage(original: original, edited: result)
+        if template.isMarkdown { return result }
         let leading = String(original.prefix(while: { $0.isWhitespace }))
         let trailing = String(original.reversed().prefix(while: { $0.isWhitespace }).reversed())
-        return leading + content + trailing
+        return leading + result + trailing
+    }
+
+    // Inspect prose rather than protected code, links, and formatting when detecting language.
+    private static func prose(_ text: String) -> String {
+        let template = MarkdownTemplate(text)
+        guard template.isMarkdown else { return text }
+        return template.lines.filter { $0.index != nil }.map { line in
+            var content = line.text
+            for token in line.tokens { content = content.replacingOccurrences(of: token.value, with: " ") }
+            return content
+        }.joined(separator: "\n")
+    }
+
+    private static func confidentLanguage(_ text: String, minimumLetters: Int) -> NLLanguage? {
+        let text = prose(text)
+        guard text.unicodeScalars.filter({ CharacterSet.letters.contains($0) }).count >= minimumLetters else { return nil }
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+        guard let language = recognizer.dominantLanguage,
+              language != .undetermined,
+              (recognizer.languageHypotheses(withMaximum: 1)[language] ?? 0) >= 0.95 else { return nil }
+        return language
+    }
+
+    /// Reject clear language changes; avoid guessing from very short or ambiguous prose.
+    private static func validateLanguage(original: String, edited: String) throws {
+        func dominant(_ text: String) -> Int? {
+            let letters = text.unicodeScalars.filter { CharacterSet.letters.contains($0) }
+            guard letters.count >= 3 else { return nil }
+            let scripts = [#"\p{Latin}"#, #"\p{Cyrillic}"#, #"[\p{Han}\p{Hiragana}\p{Katakana}]"#, #"\p{Hangul}"#, #"\p{Arabic}"#, #"\p{Greek}"#, #"\p{Hebrew}"#, #"\p{Devanagari}"#]
+            let range = NSRange(text.startIndex..., in: text)
+            return scripts.firstIndex { pattern in
+                let count = try! NSRegularExpression(pattern: pattern).numberOfMatches(in: text, range: range)
+                return Double(count) / Double(letters.count) >= 0.9
+            }
+        }
+        let scriptChanged = dominant(prose(original)).flatMap { source in dominant(prose(edited)).map { $0 != source } } ?? false
+        let languageChanged = confidentLanguage(original, minimumLetters: 30).flatMap { source in
+            confidentLanguage(edited, minimumLetters: 30).map { $0 != source }
+        } ?? false
+        if scriptChanged || languageChanged {
+            throw EditingFailure("The model changed the text's language instead of editing it. Please try again.")
+        }
     }
 }
 
