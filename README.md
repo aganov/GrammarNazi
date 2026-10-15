@@ -1,3 +1,5 @@
+![GrammarNazi cover with bold white lettering, quotation marks, and a red proofreading underline on black](assets/grammarnazi-cover.png)
+
 # GrammarNazi
 
 Fix and rewrite selected text in Slack and other Mac apps using Tinycast **Custom Commands** and a small native preview app. Supports **Tinycast 0.9.7-sequoia on macOS 15**, with Qwen3.5-4B running locally through llama.cpp.
