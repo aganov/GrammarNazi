@@ -1,0 +1,48 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "grammarly-local",
+  "title": "Grammarly Local",
+  "description": "Fix grammar and rewrite selected text locally with Qwen3.5 on llama.cpp.",
+  "version": "1.0.0",
+  "icon": "icon.png",
+  "author": "alex",
+  "license": "MIT",
+  "platforms": ["macOS"],
+  "categories": ["Productivity"],
+  "commands": [
+    {
+      "name": "fix-grammar",
+      "title": "Fix Grammar",
+      "description": "Correct grammar, spelling and punctuation while preserving your meaning and voice.",
+      "mode": "view",
+      "arguments": [{ "name": "text", "type": "text", "placeholder": "Text (or use selection)", "required": false }]
+    },
+    {
+      "name": "rewrite",
+      "title": "Rewrite",
+      "description": "Rewrite text for clarity, with a natural, professional, friendly or concise tone.",
+      "mode": "view",
+      "arguments": [{ "name": "text", "type": "text", "placeholder": "Text (or use selection)", "required": false }]
+    }
+  ],
+  "preferences": [
+    { "name": "modelsDirectory", "title": "Models Folder", "description": "Choose the models folder created by npm run setup.", "type": "directory", "required": true },
+    { "name": "generationModel", "title": "Generation Model (optional)", "description": "Use another instruction-tuned GGUF instead of the default Qwen3.5 4B model.", "type": "file", "required": false },
+    { "name": "tone", "title": "Rewrite Tone", "description": "Default tone for Rewrite.", "type": "dropdown", "required": false, "default": "natural", "data": [{ "title": "Natural", "value": "natural" }, { "title": "Professional", "value": "professional" }, { "title": "Friendly", "value": "friendly" }, { "title": "Concise", "value": "concise" }] }
+  ],
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "build": "npm run typecheck && node scripts/build.mjs",
+    "build:selection": "npm run build && node scripts/build-selection.mjs",
+    "install:selection": "node scripts/install-selection.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:tinycast": "node scripts/test-tinycast.mjs",
+    "test:helper": "python3 tests/helper_test.py",
+    "test:models": "node --import tsx scripts/test-models.mjs",
+    "test:selection": "node scripts/test-selection.mjs",
+    "test:selection-models": "node scripts/test-selection.mjs --models --preview"
+  },
+  "dependencies": { "@raycast/api": "2.8.0", "react": "19.3.0" },
+  "devDependencies": { "@types/node": "^22.0.0", "@types/react": "^19.0.0", "esbuild": "0.28.2", "tsx": "4.23.15", "typescript": "7.0.2" }
+}

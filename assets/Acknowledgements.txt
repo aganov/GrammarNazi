@@ -1,0 +1,19 @@
+Grammarly Local uses llama.cpp (MIT) and Qwen3.5 (Apache-2.0).
+
+llama.cpp source and license:
+https://github.com/ggml-org/llama.cpp
+https://github.com/ggml-org/llama.cpp/blob/b11461/LICENSE
+
+Qwen3.5 source and model license:
+https://huggingface.co/Qwen/Qwen3.5-4B
+https://huggingface.co/Qwen/Qwen3.5-4B/blob/main/LICENSE
+
+GGUF conversion by Unsloth:
+https://huggingface.co/unsloth/Qwen3.5-4B-GGUF
+
+The setup script retrieves the llama.cpp license and retains licenses included in its release archive.
+Model weights are downloaded separately and are not distributed inside this extension.
+
+DigUp was studied as a reference for local GGUF inference and model lifecycle.
+https://github.com/ARahim3/DigUp
+No DigUp implementation code is included.
