@@ -2,6 +2,18 @@
 
 Fix and rewrite selected text in Slack and other Mac apps using Tinycast **Custom Commands** and a small native preview app. Supports **Tinycast 0.9.7-sequoia on macOS 15**, with Qwen3.5-4B running locally through llama.cpp.
 
+## Screenshots
+
+The native app with demo text: review a rewrite, choose a tone, then copy or replace your selection.
+
+![Rewrite preview with a Professional tone selector and Copy and Replace controls](docs/screenshots/rewrite.png)
+
+Long passages scroll within the preview, keeping the action buttons visible. Switch between formatted text and the Markdown source used by Copy and Replace.
+
+| Formatted preview | Markdown source |
+| --- | --- |
+| ![Formatted Markdown preview showing headings, bold and italic emphasis, and a scrollable list](docs/screenshots/markdown-preview.png) | ![Markdown source view preserving heading, emphasis, and list markers](docs/screenshots/markdown-source.png) |
+
 ## Selected-text workflow
 
 1. Select a passage in your app.
