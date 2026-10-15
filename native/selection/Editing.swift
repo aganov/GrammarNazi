@@ -85,49 +85,30 @@ struct SelectionIdentity: Equatable {
     }
 }
 
-/// One job owns one native inference helper. Cancellation cannot race process launch.
+/// Implementations are confined to the app's serial inference queue.
+protocol InferenceSession: AnyObject {
+    func run(model: URL, request: Data, isCancelled: @escaping () -> Bool) throws -> Data
+}
+
+/// Each generation has its own cancellation flag; cancellation never resets a newer job.
 final class EditingJob: @unchecked Sendable {
     private let lock = NSLock()
-    private var process: Process?
     private var cancelled = false
 
     func cancel() {
         lock.lock(); defer { lock.unlock() }
         cancelled = true
-        if let process, process.isRunning { process.terminate() }
     }
 
-    func run(resources: URL, model: URL, request: Data) throws -> Data {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("grammarly-selection-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let input = folder.appendingPathComponent("request.json")
-        let output = folder.appendingPathComponent("result.json")
-        let error = folder.appendingPathComponent("error.txt")
-        try request.write(to: input)
-        FileManager.default.createFile(atPath: output.path, contents: nil)
-        FileManager.default.createFile(atPath: error.path, contents: nil)
-        let stdout = try FileHandle(forWritingTo: output)
-        let stderr = try FileHandle(forWritingTo: error)
-        defer { try? stdout.close(); try? stderr.close() }
-        let child = Process()
-        child.executableURL = resources.appendingPathComponent("grammarnazi-helper")
-        child.arguments = [resources.appendingPathComponent("llama/llama-server").path, model.path, input.path]
-        child.standardInput = FileHandle.nullDevice
-        child.standardOutput = stdout
-        child.standardError = stderr
-        lock.lock()
-        if cancelled { lock.unlock(); throw CancellationError() }
-        process = child
-        do { try child.run() } catch { lock.unlock(); throw error }
-        lock.unlock()
-        child.waitUntilExit()
-        lock.lock(); let wasCancelled = cancelled; process = nil; lock.unlock()
-        if wasCancelled { throw CancellationError() }
-        guard child.terminationStatus == 0 else {
-            let message = (try? String(contentsOf: error, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
-            throw EditingFailure(message?.isEmpty == false ? String(message!.prefix(600)) : "Local editing failed. Please try again.")
-        }
-        return try Data(contentsOf: output)
+    private var isCancelled: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return cancelled
+    }
+
+    func run(session: InferenceSession, model: URL, request: Data) throws -> Data {
+        guard !isCancelled else { throw CancellationError() }
+        let result = try session.run(model: model, request: request, isCancelled: { self.isCancelled })
+        guard !isCancelled else { throw CancellationError() }
+        return result
     }
 }

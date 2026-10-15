@@ -13,7 +13,7 @@
     "build:selection": "npm run build",
     "install:selection": "node scripts/install-selection.mjs",
     "test": "node scripts/test-selection.mjs",
-    "test:helper": "python3 tests/helper_test.py",
+    "test:inference": "node scripts/test-selection.mjs --inference",
     "test:selection": "node scripts/test-selection.mjs",
     "test:models": "node scripts/test-selection.mjs --models",
     "test:selection-models": "node scripts/test-selection.mjs --models --preview"

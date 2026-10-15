@@ -34,6 +34,9 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var captured: CapturedSelection?
     private var result: String?
     private var job: EditingJob?
+    private var inference: EmbeddedInferenceSession?
+    private var closing = false
+    private var readyToTerminate = false
     private var generation = 0
     private var action: EditingAction = .grammar
     private var demo = false
@@ -194,13 +197,14 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func showExisting() {
-        guard panel != nil else { return }
+        guard panel != nil, !closing else { return }
         panel.orderFrontRegardless()
         panel.makeKey()
         panel.makeFirstResponder(body)
     }
 
     @objc private func handleRepeatedCommand() {
+        guard !closing else { return }
         // After granting Accessibility, running the command again should retry
         // selection capture rather than bring back the old permission message.
         if captured == nil && !demo && AXIsProcessTrusted() {
@@ -227,7 +231,7 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func generate() {
-        guard let captured, !demo else { return }
+        guard let captured, !demo, !closing else { return }
         job?.cancel()
         generation += 1
         let current = generation
@@ -239,7 +243,7 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let resources = self.resources
         let tone = RewriteTone.allCases[tonePicker.indexOfSelectedItem]
         let action = self.action
-        worker.async { [weak self] in
+        worker.async { [self] in
             do {
                 struct Configuration: Decodable { let modelPath: String }
                 let configuration = try JSONDecoder().decode(Configuration.self, from: Data(contentsOf: resources.appendingPathComponent("configuration.json")))
@@ -247,11 +251,12 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 let result: String
                 if EditingRules.requiresInference(captured.text) {
                     let request = try rules.request(text: captured.text, action: action, tone: tone)
-                    let response = try task.run(resources: resources, model: URL(fileURLWithPath: configuration.modelPath), request: request)
+                    if inference == nil { inference = try EmbeddedInferenceSession() }
+                    let response = try task.run(session: inference!, model: URL(fileURLWithPath: configuration.modelPath), request: request)
                     result = try EditingRules.completion(response, original: captured.text)
                 } else { result = captured.text }
                 DispatchQueue.main.async {
-                    guard let self, current == self.generation else { return }
+                    guard current == self.generation, !self.closing else { return }
                     self.job = nil; self.result = result; self.displayText = result; self.updateBody()
                     self.spinner.stopAnimation(nil); self.spinner.isHidden = true
                     self.status.stringValue = result == captured.text ? "Your text already looks correct." : "Review the result. Return replaces; ⌘C copies; Esc cancels."
@@ -259,7 +264,7 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
             } catch {
                 DispatchQueue.main.async {
-                    guard let self, current == self.generation else { return }
+                    guard current == self.generation, !self.closing else { return }
                     self.job = nil
                     self.showError(error)
                 }
@@ -302,7 +307,21 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         catch { showError(error); showExisting() }
     }
 
-    @objc private func cancel() { job?.cancel(); panel?.orderOut(nil); NSApp.terminate(nil) }
+    @objc private func cancel() {
+        guard !closing else { return }
+        closing = true; generation += 1
+        job?.cancel(); panel?.orderOut(nil)
+        // Drain the worker before freeing model resources and exiting. The UI never waits.
+        worker.async { [self] in
+            inference = nil
+            DispatchQueue.main.async { self.readyToTerminate = true; NSApp.terminate(nil) }
+        }
+    }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if readyToTerminate { return .terminateNow }
+        cancel()
+        return .terminateCancel
+    }
     func windowShouldClose(_ sender: NSWindow) -> Bool { cancel(); return false }
     func applicationWillTerminate(_ notification: Notification) {
         job?.cancel()

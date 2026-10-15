@@ -24,11 +24,11 @@ Long passages scroll within the preview, keeping the action buttons visible. Swi
 
 The preview is a non-activating macOS panel so the original app can keep its selection. Rewrite offers Natural, Professional, Friendly and Concise tones; changing the tone regenerates from the original passage. Repeating a command while its preview is open brings that preview forward.
 
-Selection capture first uses Accessibility, enabling the accessibility tree for Electron apps such as Slack. If the app does not expose selected text, the helper briefly sends ⌘C and restores the clipboard. A clipboard change must be observed; an unchanged clipboard is never treated as a selection. Replacement checks the original app, selected text, and any available window, field and selection range. A mismatch keeps the preview open with Copy available. Replacement sends ⌘V and never Return into the source app, so it does not submit a Slack message.
+Selection capture first uses Accessibility, enabling the accessibility tree for Electron apps such as Slack. If the app does not expose selected text, the app briefly sends ⌘C and restores the clipboard. A clipboard change must be observed; an unchanged clipboard is never treated as a selection. Replacement checks the original app, selected text, and any available window, field and selection range. A mismatch keeps the preview open with Copy available. Replacement sends ⌘V and never Return into the source app, so it does not submit a Slack message.
 
 ## Install Custom Commands
 
-Requires macOS 15+, Apple Silicon, Node 22+ for building, and Xcode Command Line Tools. The installed native commands do not need Node or Raycast running.
+Requires macOS 15+, Apple Silicon, Node 22+, CMake 3.24+, and Xcode Command Line Tools for building. Install CMake with `brew install cmake`, or set `CMAKE` to its executable path. The installed native commands do not need Node or Raycast running.
 
 ```sh
 npm ci --ignore-scripts
@@ -43,11 +43,11 @@ Restart Tinycast once after installation so 0.9.7-sequoia reloads its Custom Com
 
 The resizable preview wraps long words, URLs, and code inside its scroll area. Switch between **Preview** for formatted headings, lists, and emphasis, and **Markdown** for the exact text that Copy and Replace use. Markdown edits retain heading levels, list markers and numbering, indentation, blank lines, emphasis delimiters, links, and code. Only prose is sent for editing; formatting tokens are protected and restored, and malformed model output is rejected. Code-only selections remain unchanged.
 
-Both commands are available in the launcher. Assign global shortcuts through Tinycast's Custom Commands settings. Keep **Load shell environment**, **Needs confirmation** and **Show confirmation** off for these commands. No text argument is required: the native helper reads the selection directly.
+Both commands are available in the launcher. Assign global shortcuts through Tinycast's Custom Commands settings. Keep **Load shell environment**, **Needs confirmation** and **Show confirmation** off for these commands. No text argument is required: the native app reads the selection directly.
 
 For manual registration, `dist/custom-commands.txt` contains the two exact shell commands. `dist/GrammarNazi.app` is also runnable before installation. Keep the project's `models/` folder in place; the app's `Contents/Resources/configuration.json` points to that GGUF file. To move the model, update that path in the source build configuration and rebuild/reinstall the app.
 
-Canceling a preview or changing tone stops the current inference job. Local model processes exit after each request. Temporary input and result files are stored in private directories and removed after inference. Copy intentionally leaves the result on the clipboard; temporary selection copies and paste operations restore the previous clipboard unless another app has changed it. Clipboard managers can observe this temporary traffic. Password fields and Secure Input are refused.
+Canceling a preview or changing tone cancels the current inference job. Qwen runs inside the app on a serial background queue. Model weights stay loaded for retries and tone changes until Copy, Replace, or Cancel closes the preview; closing drains inference and releases its resources before the app exits. Each generation uses fresh context and sampling state. Copy intentionally leaves the result on the clipboard; temporary selection copies and paste operations restore the previous clipboard unless another app has changed it. Clipboard managers can observe this temporary traffic. Password fields and Secure Input are refused.
 
 ### Native workflow checks
 
@@ -56,7 +56,7 @@ npm run test:selection
 npm run test:selection-models
 ```
 
-The first command checks shared prompts, Markdown structure preservation, response validation, selection identity changes, cancellation before process launch, and idempotent Custom Command registration. The second also runs plain and Markdown passages through the real model and renders demo and long-text previews to `vendor/selection-*.png`, checking wrapping and scrolling. It requires loopback networking and a graphical macOS session.
+The first command checks shared prompts, Markdown structure preservation, response validation, selection identity changes, cancellation before inference, and idempotent Custom Command registration. The second also runs plain and Markdown passages through the real model and renders demo and long-text previews to `vendor/selection-*.png`, checking wrapping and scrolling. Preview rendering requires a graphical macOS session.
 
 After granting Accessibility, check a draft in Slack: select text, run each command, replace it, and use Slack's Undo. Also change the selection or switch apps while generation runs and confirm Replace refuses the changed target. These app-specific checks require real Accessibility access; automated core tests do not establish Slack compatibility.
 
@@ -64,19 +64,19 @@ After granting Accessibility, check a draft in Slack: select text, run each comm
 
 The native app and the two Tinycast Custom Commands are the complete installation. No Raycast extension, React runtime, Ollama, or npm dependencies are required. Node 22+ runs the build and setup scripts; the installed app uses Swift and llama.cpp directly.
 
-Setup downloads the pinned llama.cpp **b11461** Apple Silicon release and Qwen3.5-4B Q4_K_M GGUF weights, verifying downloads with SHA-256. Allow roughly 2.74 GB for the model plus the runtime. Existing verified downloads are reused. Model weights stay in `models/`, outside the app bundle.
+Setup downloads the pinned llama.cpp **b11461** source archive and Qwen3.5-4B Q4_K_M GGUF weights, verifying both with SHA-256. Build compiles static runtime libraries, including chat utilities and embedded Metal shaders; subsequent builds reuse the CMake build cache. Allow roughly 2.74 GB for the model plus the runtime. Existing verified downloads are reused. Model weights stay in `models/`, outside the app bundle.
 
 `npm run build` produces only `dist/GrammarNazi.app`, the command installer, and manual command instructions. It clears old generated extension files and app bundles first. If you rename or move the project directory, rebuild and reinstall so the app records the model's new absolute path.
 
 Qwen generates corrections and rewrites directly, with thinking disabled. There is no embedding model or retrieval step. Input is limited to 12,000 UTF-16 units. Incomplete output is rejected. Editing quality depends on the model and language.
 
-Inspired by [DigUp's llama.cpp integration](https://github.com/ARahim3/DigUp/blob/main/Sources/LlamaRuntime/LlamaEmbedder.swift), the Swift helper starts an authenticated llama.cpp server on loopback for each request. It terminates and reaps that process after inference, cancellation, or parent exit. No daemon stays running between commands.
+Swift calls a small C++ bridge linked directly into the native app. llama.cpp loads Qwen with Metal acceleration and handles its chat template, disabled thinking, and schema-constrained Markdown responses. There is no inference helper, server, listening socket, or daemon. Cancellation is checked during model loading, between prompt batches, and between generated tokens; an active GPU operation may finish before cancellation completes. Load and generation deadlines are 90 and 120 seconds respectively. Native runtime faults can terminate the app because inference shares its process.
 
-Run `npm test` for native core checks, `npm run test:helper` for local HTTP transport and process cleanup checks, and `npm run test:selection-models` for real Qwen edits and preview rendering. The latter two need loopback networking; preview checks also need a graphical macOS session.
+Run `npm test` for native core checks, `npm run test:inference` for the embedded bridge and cancellation/lifecycle checks, and `npm run test:selection-models` for real Qwen edits, model reuse, cancellation recovery, and preview rendering. Preview checks need a graphical macOS session. The installed app has no CMake, Node, or downloaded runtime dependency.
 
 ## Privacy and implementation
 
-After setup, editing uses only the short-lived local server. Requests pass through private temporary files that are removed after each job. The app does not persist text or editing history. Copy and Replace use the original Markdown source, independent of preview rendering.
+After setup, editing runs entirely inside the app. Requests and responses stay in memory; inference does not use HTTP or temporary text files. Runtime logging is disabled to avoid persisting selected or generated text. The app does not persist text or editing history. Copy and Replace use the original Markdown source, independent of preview rendering.
 
 The bundle identifier and Custom Command IDs stay stable across the rename to retain macOS settings and shortcuts. They are active identifiers rather than old installations.
 

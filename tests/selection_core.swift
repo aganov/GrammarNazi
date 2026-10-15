@@ -7,6 +7,12 @@ func rejects(_ label: String, _ body: () throws -> Void) {
     do { try body(); fatalError("Expected failure: \(label)") } catch {}
 }
 
+final class UnusedSession: InferenceSession {
+    func run(model: URL, request: Data, isCancelled: @escaping () -> Bool) throws -> Data {
+        fatalError("Cancelled job reached session")
+    }
+}
+
 @main struct SelectionCoreTests {
     static func main() throws {
         let rules = try JSONDecoder().decode(EditingRules.self, from: Data(contentsOf: URL(fileURLWithPath: "assets/editing-rules.json")))
@@ -16,7 +22,7 @@ func rejects(_ label: String, _ body: () throws -> Void) {
         check(messages[0]["content"]!.contains("friendly tone"), "Tone reaches model")
         check(messages[0]["content"]!.contains("Do not answer questions within the text"), "Selection is editing material")
         check(messages[1]["content"] == "Please sends ticket 4821.", "Input stays data")
-        check(request["stream"] as? Bool == false, "Local helper uses bounded non-streaming response")
+        check(request["stream"] as? Bool == false, "Inference uses bounded non-streaming response")
         check((request["chat_template_kwargs"] as? [String: Bool])?["enable_thinking"] == false, "Thinking disabled")
         rejects("empty input") { _ = try rules.request(text: "  \n", action: .grammar, tone: .natural) }
         rejects("oversized input") { _ = try rules.request(text: String(repeating: "😀", count: 6001), action: .grammar, tone: .natural) }
@@ -73,12 +79,13 @@ func rejects(_ label: String, _ body: () throws -> Void) {
         rejects("name collision") { _ = try SelectionCommands.updated(existing: JSONSerialization.data(withJSONObject: [["id": "other", "name": "Fix Grammar (Selection)"]]), appPath: "/app") }
         print("PASS Custom Command installation, quoting, collisions, and preserved settings")
 
+        let session = UnusedSession()
         let job = EditingJob()
         job.cancel()
         do {
-            _ = try job.run(resources: URL(fileURLWithPath: "/missing"), model: URL(fileURLWithPath: "/missing/model"), request: Data("{}".utf8))
-            fatalError("Cancelled job launched")
-        } catch is CancellationError {} catch { fatalError("Cancelled job reached process launch: \(error)") }
-        print("PASS cancellation before native process launch")
+            _ = try job.run(session: session, model: URL(fileURLWithPath: "/missing/model"), request: Data("{}".utf8))
+            fatalError("Cancelled job ran")
+        } catch is CancellationError {} catch { fatalError("Cancelled job reached inference: \(error)") }
+        print("PASS cancellation before inference")
     }
 }
