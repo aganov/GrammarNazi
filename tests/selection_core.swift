@@ -30,6 +30,23 @@ func rejects(_ label: String, _ body: () throws -> Void) {
         }
         print("PASS completion validation and formatting")
 
+        let markdown = "# **Release** notes\r\n\r\n- She dont have `invoice_id`.\r\n1. Read [the docs](https://example.test/path).\r\n> _We was ready._\r\n\r\n```swift\r\nlet dont = \"unchanged\"\r\n```\r\n"
+        let template = MarkdownTemplate(markdown)
+        check(template.isMarkdown, "Markdown recognized")
+        check(template.editable.count == 4, "Only prose is sent to the model")
+        let edits = template.editable.map { $0.replacingOccurrences(of: "dont", with: "doesn't").replacingOccurrences(of: "was", with: "were") }
+        let payload = String(data: try JSONSerialization.data(withJSONObject: ["lines": edits]), encoding: .utf8)!
+        let restored = try template.restore(payload)
+        check(restored == markdown.replacingOccurrences(of: "She dont", with: "She doesn't").replacingOccurrences(of: "We was", with: "We were"), "Headings, lists, emphasis, links, code, blank lines, and CRLF survive editing")
+        check(!EditingRules.requiresInference("```swift\nlet dont = 1\n```"), "Code-only selections need no inference")
+        let structured = try JSONSerialization.jsonObject(with: rules.request(text: markdown, action: .grammar, tone: .natural)) as! [String: Any]
+        check(structured["response_format"] != nil, "Markdown uses schema-constrained output")
+        var damaged = edits
+        damaged[0] = "Release notes"
+        rejects("lost emphasis") { _ = try template.restore(String(data: JSONSerialization.data(withJSONObject: ["lines": damaged]), encoding: .utf8)!) }
+        rejects("lost lines") { _ = try template.restore("{\"lines\":[]}") }
+        print("PASS Markdown structure and protected content preservation")
+
         let original = SelectionIdentity(pid: 101, text: "selected", range: NSRange(location: 4, length: 8))
         check(original.matches(original), "Same selection accepted")
         check(!original.matches(SelectionIdentity(pid: 102, text: "selected", range: original.range)), "Other app refused")

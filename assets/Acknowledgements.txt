@@ -1,4 +1,4 @@
-Grammarly Local uses llama.cpp (MIT) and Qwen3.5 (Apache-2.0).
+GrammarNazi uses llama.cpp (MIT) and Qwen3.5 (Apache-2.0).
 
 llama.cpp source and license:
 https://github.com/ggml-org/llama.cpp

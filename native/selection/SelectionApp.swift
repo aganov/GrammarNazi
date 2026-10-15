@@ -19,7 +19,10 @@ final class PreviewPanel: NSPanel {
 
 final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var panel: PreviewPanel!
-    private let body = NSTextView(frame: NSRect(x: 0, y: 0, width: 520, height: 240))
+    private let body = PreviewTextView(frame: NSRect(x: 0, y: 0, width: 580, height: 240))
+    private let scroll = NSScrollView()
+    private let formatPicker = NSSegmentedControl(labels: ["Preview", "Markdown"], trackingMode: .selectOne, target: nil, action: nil)
+    private var displayText = ""
     private let context = NSTextField(labelWithString: "Selected text")
     private let status = NSTextField(wrappingLabelWithString: "Reading selected text…")
     private let spinner = NSProgressIndicator()
@@ -55,8 +58,11 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         makePanel()
         if demo {
             context.stringValue = "Selected text in Slack · Demo"
-            body.string = "Could you send me an update about ticket 4821 when you have a moment?"
-            result = body.string
+            let fixture = arguments.firstIndex(of: "--fixture").flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil }
+            displayText = fixture.flatMap { try? String(contentsOfFile: $0, encoding: .utf8) } ?? "Could you send me an update about ticket 4821 when you have a moment?"
+            result = displayText
+            if arguments.contains("--source-preview") { formatPicker.selectedSegment = 1 }
+            updateBody()
             status.stringValue = "Review your rewrite, then replace the selection or copy the result."
             spinner.stopAnimation(nil); spinner.isHidden = true
             copyButton.isEnabled = true
@@ -66,8 +72,14 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                     guard let self, let content = self.panel.contentView,
                           let bitmap = content.bitmapImageRepForCachingDisplay(in: content.bounds) else { NSApp.terminate(nil); return }
+                    content.layoutSubtreeIfNeeded()
+                    self.body.layoutManager?.ensureLayout(for: self.body.textContainer!)
                     content.cacheDisplay(in: content.bounds, to: bitmap)
                     if let data = bitmap.representation(using: .png, properties: [:]) { try? data.write(to: URL(fileURLWithPath: output)) }
+                    let container = self.body.textContainer!
+                    let used = self.body.layoutManager!.usedRect(for: container)
+                    let report: [String: Any] = ["textWidth": used.width, "containerWidth": container.size.width, "documentHeight": self.body.frame.height, "viewportHeight": self.scroll.contentSize.height, "horizontalScroller": self.scroll.hasHorizontalScroller, "text": self.body.string]
+                    if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted]) { try? data.write(to: URL(fileURLWithPath: output + ".json")) }
                     self.cancel()
                 }
             }
@@ -78,8 +90,9 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func makePanel() {
-        panel = PreviewPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 440), styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.title = "Grammarly Local"
+        panel = PreviewPanel(contentRect: NSRect(x: 0, y: 0, width: 640, height: 520), styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.contentMinSize = NSSize(width: 520, height: 400)
+        panel.title = "GrammarNazi"
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.isReleasedWhenClosed = false
@@ -103,7 +116,7 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         context.textColor = .secondaryLabelColor
         let heading = NSStackView(views: [title, context])
         heading.orientation = .vertical; heading.alignment = .leading; heading.spacing = 4
-        heading.setContentCompressionResistancePriority(.required, for: .horizontal)
+        context.lineBreakMode = .byTruncatingTail
         tonePicker.addItems(withTitles: RewriteTone.allCases.map(\.title))
         tonePicker.selectItem(withTitle: UserDefaults.standard.string(forKey: "rewriteTone").flatMap(RewriteTone.init(rawValue:))?.title ?? "Natural")
         tonePicker.target = self; tonePicker.action = #selector(changeTone)
@@ -119,19 +132,24 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         body.drawsBackground = false
         body.textContainerInset = NSSize(width: 2, height: 8)
         body.isVerticallyResizable = true; body.isHorizontallyResizable = false
+        body.minSize = .zero
+        body.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         body.autoresizingMask = [.width]
         body.textContainer?.widthTracksTextView = true
-        body.textContainer?.containerSize = NSSize(width: 520, height: CGFloat.greatestFiniteMagnitude)
-        let scroll = NSScrollView()
+        body.textContainer?.containerSize = NSSize(width: 580, height: CGFloat.greatestFiniteMagnitude)
+        body.textContainer?.lineBreakMode = .byWordWrapping
         scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
+        scroll.hasHorizontalScroller = false
         scroll.drawsBackground = false; scroll.borderType = .noBorder
         scroll.documentView = body
-        scroll.heightAnchor.constraint(equalToConstant: 230).isActive = true
+        scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 150).isActive = true
+        formatPicker.selectedSegment = 0
+        formatPicker.target = self; formatPicker.action = #selector(changeFormat)
 
         spinner.style = .spinning; spinner.controlSize = .small
         spinner.startAnimation(nil)
         status.font = .systemFont(ofSize: 12); status.textColor = .secondaryLabelColor
-        status.maximumNumberOfLines = 3
+        status.maximumNumberOfLines = 2
         let feedback = NSStackView(views: [spinner, status])
         feedback.orientation = .horizontal; feedback.alignment = .centerY; feedback.spacing = 8
 
@@ -146,7 +164,7 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         for button in [cancel, retryButton, copyButton, replaceButton] { button.bezelStyle = .rounded }
         let footer = NSStackView(views: [cancel, retryButton, NSView(), copyButton, replaceButton])
         footer.orientation = .horizontal; footer.alignment = .centerY; footer.spacing = 8
-        let stack = NSStackView(views: [header, scroll, feedback, footer])
+        let stack = NSStackView(views: [header, formatPicker, scroll, feedback, footer])
         stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(stack)
@@ -154,11 +172,25 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
             stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 20),
             stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -20),
             stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 28),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -16),
+            stack.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -16),
             header.widthAnchor.constraint(equalTo: stack.widthAnchor), scroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
             feedback.widthAnchor.constraint(equalTo: stack.widthAnchor), footer.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
         panel.center()
+    }
+
+    @objc private func changeFormat() { updateBody() }
+
+    private func updateBody() {
+        panel.contentView?.layoutSubtreeIfNeeded()
+        body.setFrameSize(NSSize(width: scroll.contentSize.width, height: max(1, scroll.contentSize.height)))
+        body.textStorage?.setAttributedString(MarkdownPreview.render(displayText, raw: formatPicker.selectedSegment == 1))
+        if let container = body.textContainer, let layout = body.layoutManager {
+            layout.ensureLayout(for: container)
+            let height = layout.usedRect(for: container).height + body.textContainerInset.height * 2
+            body.setFrameSize(NSSize(width: scroll.contentSize.width, height: max(scroll.contentSize.height, height)))
+        }
+        body.scrollRangeToVisible(NSRange(location: 0, length: 0))
     }
 
     @objc private func showExisting() {
@@ -183,11 +215,12 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 // macOS owns this consent; installation never grants it silently.
                 let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
                 _ = AXIsProcessTrustedWithOptions(options)
-                throw EditingFailure("Allow Grammarly Local in System Settings → Privacy & Security → Accessibility, then return to your app and run the command again.")
+                throw EditingFailure("Allow GrammarNazi in System Settings → Privacy & Security → Accessibility, then return to your app and run the command again.")
             }
             captured = try CapturedSelection.capture()
             context.stringValue = "Selected text in \(captured!.app.localizedName ?? "your app")"
-            body.string = captured!.text
+            displayText = captured!.text
+            updateBody()
             showExisting()
             generate()
         } catch { showError(error); showExisting() }
@@ -211,12 +244,15 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 struct Configuration: Decodable { let modelPath: String }
                 let configuration = try JSONDecoder().decode(Configuration.self, from: Data(contentsOf: resources.appendingPathComponent("configuration.json")))
                 let rules = try JSONDecoder().decode(EditingRules.self, from: Data(contentsOf: resources.appendingPathComponent("editing-rules.json")))
-                let request = try rules.request(text: captured.text, action: action, tone: tone)
-                let response = try task.run(resources: resources, model: URL(fileURLWithPath: configuration.modelPath), request: request)
-                let result = try EditingRules.completion(response, original: captured.text)
+                let result: String
+                if EditingRules.requiresInference(captured.text) {
+                    let request = try rules.request(text: captured.text, action: action, tone: tone)
+                    let response = try task.run(resources: resources, model: URL(fileURLWithPath: configuration.modelPath), request: request)
+                    result = try EditingRules.completion(response, original: captured.text)
+                } else { result = captured.text }
                 DispatchQueue.main.async {
                     guard let self, current == self.generation else { return }
-                    self.job = nil; self.result = result; self.body.string = result
+                    self.job = nil; self.result = result; self.displayText = result; self.updateBody()
                     self.spinner.stopAnimation(nil); self.spinner.isHidden = true
                     self.status.stringValue = result == captured.text ? "Your text already looks correct." : "Review the result. Return replaces; ⌘C copies; Esc cancels."
                     self.replaceButton.isEnabled = true; self.copyButton.isEnabled = true

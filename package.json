@@ -1,7 +1,7 @@
 {
   "$schema": "https://www.raycast.com/schemas/extension.json",
   "name": "grammarly-local",
-  "title": "Grammarly Local",
+  "title": "GrammarNazi",
   "description": "Fix grammar and rewrite selected text locally with Qwen3.5 on llama.cpp.",
   "version": "1.0.0",
   "icon": "icon.png",

@@ -1,15 +1,26 @@
 import { execFileSync } from "node:child_process";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
+import assert from "node:assert/strict";
 import { resolve } from "node:path";
 
 await mkdir("vendor/swift-cache", { recursive: true });
-execFileSync("/usr/bin/xcrun", ["swiftc", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", resolve("vendor/swift-cache"), "native/selection/Editing.swift", "native/selection/CustomCommands.swift", "tests/selection_core.swift", "-o", "vendor/selection-core-tests"], { stdio: "inherit" });
+execFileSync("/usr/bin/xcrun", ["swiftc", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", resolve("vendor/swift-cache"), "native/selection/Markdown.swift", "native/selection/Editing.swift", "native/selection/CustomCommands.swift", "tests/selection_core.swift", "-o", "vendor/selection-core-tests"], { stdio: "inherit" });
 execFileSync(resolve("vendor/selection-core-tests"), [], { stdio: "inherit" });
 if (process.argv.includes("--models")) {
-  execFileSync("/usr/bin/xcrun", ["swiftc", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", resolve("vendor/swift-cache"), "native/selection/Editing.swift", "tests/selection_models.swift", "-o", "vendor/selection-model-tests"], { stdio: "inherit" });
-  execFileSync(resolve("vendor/selection-model-tests"), [resolve("dist/Grammarly Local.app/Contents/Resources")], { stdio: "inherit" });
+  execFileSync("/usr/bin/xcrun", ["swiftc", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", resolve("vendor/swift-cache"), "native/selection/Markdown.swift", "native/selection/Editing.swift", "tests/selection_models.swift", "-o", "vendor/selection-model-tests"], { stdio: "inherit" });
+  execFileSync(resolve("vendor/selection-model-tests"), [resolve("dist/GrammarNazi.app/Contents/Resources")], { stdio: "inherit" });
 }
 if (process.argv.includes("--preview")) {
-  execFileSync(resolve("dist/Grammarly Local.app/Contents/MacOS/GrammarlyLocal"), ["--action", "rewrite", "--render-preview", resolve("vendor/selection-preview.png")], { stdio: "inherit", timeout: 15000 });
-  console.log("Rendered native preview: vendor/selection-preview.png");
+  execFileSync(resolve("dist/GrammarNazi.app/Contents/MacOS/GrammarNazi"), ["--action", "rewrite", "--render-preview", resolve("vendor/selection-preview.png")], { stdio: "inherit", timeout: 15000 });
+  for (const raw of [false, true]) {
+    const output = resolve(`vendor/selection-long-${raw ? "markdown" : "preview"}.png`);
+    execFileSync(resolve("dist/GrammarNazi.app/Contents/MacOS/GrammarNazi"), ["--action", "rewrite", "--fixture", resolve("tests/fixtures/long-markdown.md"), "--render-preview", output, ...(raw ? ["--source-preview"] : [])], { stdio: "inherit", timeout: 15000 });
+    const report = JSON.parse(await readFile(output + ".json", "utf8"));
+    assert.ok(report.textWidth <= report.containerWidth + 1, "Long words and URLs must wrap within the text container");
+    assert.ok(report.documentHeight > report.viewportHeight, "Long text must grow the scrollable document");
+    assert.equal(report.horizontalScroller, false);
+    if (raw) assert.equal(report.text, await readFile("tests/fixtures/long-markdown.md", "utf8"));
+    console.log(`PASS long ${raw ? "Markdown" : "preview"} wraps and scrolls (${output})`);
+  }
+  console.log("Rendered native previews in vendor/selection-*.png");
 }

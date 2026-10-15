@@ -3,7 +3,7 @@ import Foundation
 @main struct InstallCommands {
     static func main() throws {
         guard CommandLine.arguments.count == 3 else { throw NSError(domain: "Install", code: 1, userInfo: [NSLocalizedDescriptionKey: "Usage: install-commands APP_PATH BACKUP_FILE"]) }
-        let executable = URL(fileURLWithPath: CommandLine.arguments[1]).appendingPathComponent("Contents/MacOS/GrammarlyLocal").path
+        let executable = URL(fileURLWithPath: CommandLine.arguments[1]).appendingPathComponent("Contents/MacOS/GrammarNazi").path
         guard FileManager.default.isExecutableFile(atPath: executable) else { throw NSError(domain: "Install", code: 2, userInfo: [NSLocalizedDescriptionKey: "Build the native app first."]) }
         let defaults = UserDefaults(suiteName: "com.tinycast.app")!
         let original = defaults.data(forKey: "customCommands")

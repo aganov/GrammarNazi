@@ -128,7 +128,7 @@ export function Editor({ action: initialAction, arguments: args, fallbackText }:
 
   // Keep this List mounted throughout reading, editing, errors, and results.
   // Tinycast can preserve its native search field and focus across these updates.
-  return <List navigationTitle="Grammarly Local" filtering={false} searchText={text} onSearchTextChange={changeText} throttle={false}
+  return <List navigationTitle="GrammarNazi" filtering={false} searchText={text} onSearchTextChange={changeText} throttle={false}
     searchBarPlaceholder="Enter text to fix or rewrite…" isLoading={loading} selectedItemId={selectedId}
     onSelectionChange={(id) => { if (id) setSelectedId(id); }} searchBarAccessory={
       <List.Dropdown tooltip="Rewrite Tone" value={tone} onChange={changeTone}>

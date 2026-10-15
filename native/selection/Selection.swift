@@ -57,7 +57,7 @@ struct CapturedSelection {
     var text: String { identity.text }
 
     private static func checkEnvironment() throws {
-        guard AXIsProcessTrusted() else { throw EditingFailure("Allow Grammarly Local in System Settings → Privacy & Security → Accessibility, then run the command again.") }
+        guard AXIsProcessTrusted() else { throw EditingFailure("Allow GrammarNazi in System Settings → Privacy & Security → Accessibility, then run the command again.") }
         guard !IsSecureEventInputEnabled() else { throw EditingFailure("Text editing is unavailable while Secure Input is enabled.") }
     }
 
