@@ -16,6 +16,7 @@ test("Raycast scripts launch only the requested action and keep shell syntax ine
       assert.match(script, /# @raycast.schemaVersion 1\n/);
       assert.match(script, /# @raycast.mode silent\n/);
       assert.match(script, /# @raycast.packageName GrammarNazi\n/);
+      assert.match(script, /# @raycast.icon icon\.png\n/);
       assert.ok(script.includes(`# @raycast.title ${command.title}\n`));
       assert.doesNotMatch(script, /@raycast.argument/);
       await writeFile(path, script);
@@ -42,6 +43,9 @@ test("Writing Raycast commands updates paths and permissions without removing ot
       assert.equal(await readFile(path, "utf8"), raycastScript(command.action, "/a path/GrammarNazi.app"));
     }
     assert.equal(await readFile(join(folder, "notes.txt"), "utf8"), "keep");
-    assert.deepEqual((await readdir(folder)).sort(), ["fix-grammar.sh", "notes.txt", "rewrite.sh"]);
+    const icon = await readFile(join(folder, "icon.png"));
+    assert.deepEqual(icon, await readFile(new URL("../assets/app-icon-64.png", import.meta.url)));
+    assert.equal(icon.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+    assert.deepEqual((await readdir(folder)).sort(), ["fix-grammar.sh", "icon.png", "notes.txt", "rewrite.sh"]);
   } finally { await rm(folder, { recursive: true, force: true }); }
 });

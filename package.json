@@ -11,6 +11,7 @@
     "setup": "node scripts/setup.mjs",
     "build": "node scripts/build-selection.mjs",
     "build:selection": "npm run build",
+    "build:icon": "node scripts/build-icon.mjs",
     "install:selection": "node scripts/install-selection.mjs",
     "test": "node scripts/test-selection.mjs",
     "test:inference": "node scripts/test-selection.mjs --inference",

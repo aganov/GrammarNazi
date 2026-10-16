@@ -21,6 +21,7 @@ const flags = ["-O", "-swift-version", "5", "-target", "arm64-apple-macosx15.0",
 execFileSync("/usr/bin/xcrun", ["swiftc", ...flags, ...inferenceFlags, "native/selection/Inference.swift", "native/selection/Markdown.swift", "native/selection/Editing.swift", "native/selection/MarkdownPreview.swift", "native/selection/Selection.swift", "native/selection/SelectionApp.swift", "-o", join(app, "Contents/MacOS/GrammarNazi")], { stdio: "inherit" });
 execFileSync("/usr/bin/xcrun", ["swiftc", ...flags, "native/selection/Markdown.swift", "native/selection/Editing.swift", "native/selection/CustomCommands.swift", "native/selection/InstallCommands.swift", "-o", "dist/install-commands"], { stdio: "inherit" });
 await cp("vendor/llama.cpp-b11461/LICENSE", join(resources, "llama-LICENSE"));
+await cp("assets/app-icon.icns", join(resources, "app-icon.icns"));
 await cp("assets/editing-rules.json", join(resources, "editing-rules.json"));
 await cp("assets/Acknowledgements.txt", join(resources, "Acknowledgements.txt"));
 await cp("LICENSE", join(resources, "LICENSE"));
@@ -32,6 +33,7 @@ await writeFile(join(app, "Contents/Info.plist"), `<?xml version="1.0" encoding=
 <key>CFBundleName</key><string>GrammarNazi</string>
 <key>CFBundleExecutable</key><string>GrammarNazi</string>
 <key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleIconFile</key><string>app-icon.icns</string>
 <key>CFBundleShortVersionString</key><string>1.2.1</string>
 <key>CFBundleVersion</key><string>4</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>

@@ -1,4 +1,4 @@
-import { mkdir, writeFile, chmod } from "node:fs/promises";
+import { mkdir, writeFile, chmod, cp } from "node:fs/promises";
 import { join } from "node:path";
 
 export const commands = [
@@ -21,7 +21,7 @@ export function raycastScript(action, appPath) {
 # @raycast.title ${command.title}
 # @raycast.mode silent
 # @raycast.packageName GrammarNazi
-# @raycast.icon ✍️
+# @raycast.icon icon.png
 # @raycast.needsConfirmation false
 # @raycast.description ${command.description}
 
@@ -31,6 +31,7 @@ ${launchCommand(action, appPath)}
 
 export async function writeRaycastCommands(directory, appPath) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
+  await cp(new URL("../assets/app-icon-64.png", import.meta.url), join(directory, "icon.png"));
   for (const command of commands) {
     const path = join(directory, command.file);
     await writeFile(path, raycastScript(command.action, appPath), { mode: 0o755 });
