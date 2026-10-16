@@ -2,10 +2,11 @@ import { execFileSync } from "node:child_process";
 import { mkdir, cp, writeFile, access, rm } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { buildInference } from "./inference-build.mjs";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
+import { launchCommand, writeRaycastCommands } from "./launcher-commands.mjs";
 
 if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("Build on an Apple Silicon Mac.");
-// Build only the native app; old extension bundles must not remain importable.
+// Compile the embedded runtime before replacing the generated app bundle.
 const inferenceFlags = await buildInference();
 await access("models/Qwen3.5-4B-Q4_K_M.gguf").catch(() => { throw new Error("Run npm run setup before building."); });
 await rm("dist", { recursive: true, force: true });
@@ -27,7 +28,7 @@ await writeFile(join(resources, "configuration.json"), JSON.stringify({ modelPat
 await writeFile(join(app, "Contents/Info.plist"), `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>local.grammarly.selection</string>
+<key>CFBundleIdentifier</key><string>local.grammarnazi.selection</string>
 <key>CFBundleName</key><string>GrammarNazi</string>
 <key>CFBundleExecutable</key><string>GrammarNazi</string>
 <key>CFBundlePackageType</key><string>APPL</string>
@@ -39,7 +40,7 @@ await writeFile(join(app, "Contents/Info.plist"), `<?xml version="1.0" encoding=
 <key>NSAccessibilityUsageDescription</key><string>Read your selected text and replace it only when you choose Replace.</string>
 </dict></plist>\n`);
 execFileSync("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", app], { stdio: "inherit" });
-const quote = (s) => "'" + s.replaceAll("'", "'\"'\"'") + "'";
-const command = (action) => `exec /usr/bin/open -g -n ${quote(resolve(app))} --args --action ${action}`;
+await writeRaycastCommands("dist/raycast", join(homedir(), "Applications/GrammarNazi.app"));
+const command = (action) => launchCommand(action, resolve(app));
 await writeFile("dist/custom-commands.txt", `Tinycast 0.9.7-sequoia → Settings → Custom Commands\n\nFix Grammar (Selection)\n${command("grammar")}\n\nRewrite (Selection)\n${command("rewrite")}\n\nLoad shell environment: off\nNeeds confirmation: off\nShow confirmation: off\n\nGrant GrammarNazi Accessibility permission, then select text in your app and run a command.\n`);
-console.log(`Built ${app} for macOS 15. Custom Commands are listed in dist/custom-commands.txt.`);
+console.log(`Built ${app} for macOS 15. Tinycast commands: dist/custom-commands.txt. Raycast scripts: dist/raycast/.`);

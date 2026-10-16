@@ -5,6 +5,8 @@ import { resolve, join } from "node:path";
 import { buildInference } from "./inference-build.mjs";
 import { tmpdir } from "node:os";
 
+execFileSync(process.execPath, ["--test", "tests/launcher_commands.test.mjs", "tests/install_app.test.mjs"], { stdio: "inherit" });
+
 const swiftCache = join(tmpdir(), "grammarnazi-swift-cache");
 await mkdir(swiftCache, { recursive: true });
 execFileSync("/usr/bin/xcrun", ["swiftc", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", swiftCache, "native/selection/Markdown.swift", "native/selection/Editing.swift", "native/selection/CustomCommands.swift", "tests/selection_core.swift", "-o", "vendor/selection-core-tests"], { stdio: "inherit" });

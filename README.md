@@ -2,33 +2,50 @@
 
 # GrammarNazi
 
-Fix and rewrite selected text in Slack and other Mac apps using Tinycast **Custom Commands** and a small native preview app. Supports **Tinycast 0.9.7-sequoia on macOS 15**, with Qwen3.5-4B running locally through llama.cpp.
+**Clearer writing. Private by design.**
+
+Polish a Slack message, tighten a draft, or find a friendlier way to say it—all on your Mac. GrammarNazi fixes grammar and rewrites selected text using local AI, with a preview that puts you in control of every change.
+
+- **Edit locally.** Qwen runs inside the native app with Metal acceleration. Editing works offline after setup.
+- **Choose your tone.** Rewrite in Natural, Professional, Friendly, or Concise styles while preserving your meaning.
+- **Keep your formatting.** Edit Markdown prose while preserving headings, lists, links, emphasis, and code.
+- **Review every change.** Copy the result or replace your selection when you're ready. Cancel leaves your draft as it was.
+
+Built for **Apple Silicon and macOS 15+**. Launch from **Raycast Script Commands** or **Tinycast 0.9.7-sequoia Custom Commands**.
+
+## Privacy built into the workflow
+
+GrammarNazi processes selected text inside the app on your Mac. It does not send selections to a cloud AI service, and no AI account or API key is required. Inference requests and responses stay in memory; the app saves no selected text or editing history, and runtime prompt logging is disabled. Your preferred rewrite tone is saved locally.
+
+Setup needs an internet connection to download the model and runtime source. Once built, the app runs locally without an inference server or background model daemon. Closing the preview releases the loaded model and exits the app.
+
+You grant macOS Accessibility access so GrammarNazi can read and replace your selection. Some apps require a temporary clipboard copy to capture text, and replacement uses the clipboard to paste your edit. The previous clipboard is restored unless another app has changed it; **Copy** intentionally leaves your result there. Clipboard managers can observe these operations. Password fields and Secure Input are refused.
 
 ## Screenshots
 
-The native app with demo text: review a rewrite, choose a tone, then copy or replace your selection.
+See your rewrite before it reaches your draft. Choose a tone, review the result, then copy or replace your selection. Screenshots use demo text.
 
 ![Rewrite preview with a Professional tone selector and Copy and Replace controls](docs/screenshots/rewrite.png)
 
-Long passages scroll within the preview, keeping the action buttons visible. Switch between formatted text and the Markdown source used by Copy and Replace.
+Review long passages in a scrollable preview while the action buttons stay visible. Switch between formatted text and the exact Markdown source you will copy or paste.
 
 | Formatted preview | Markdown source |
 | --- | --- |
 | ![Formatted Markdown preview showing headings, bold and italic emphasis, and a scrollable list](docs/screenshots/markdown-preview.png) | ![Markdown source view preserving heading, emphasis, and list markers](docs/screenshots/markdown-source.png) |
 
-## Selected-text workflow
+## Edit where you write
 
 1. Select a passage in your app.
-2. Run **Fix Grammar (Selection)** or **Rewrite (Selection)** from Tinycast, or assign a global shortcut to each command.
+2. Run **Fix Grammar (Selection)** or **Rewrite (Selection)** from Raycast or Tinycast, or assign a global shortcut in your launcher.
 3. A floating preview shows the result. **Return / Replace** pastes over the selection, **⌘C / Copy** copies the result, and **Escape / Cancel** closes it.
 
 The preview is a non-activating macOS panel so the original app can keep its selection. Rewrite offers Natural, Professional, Friendly and Concise tones; changing the tone regenerates from the original passage. Repeating a command while its preview is open brings that preview forward.
 
 Selection capture first uses Accessibility, enabling the accessibility tree for Electron apps such as Slack. If the app does not expose selected text, the app briefly sends ⌘C and restores the clipboard. A clipboard change must be observed; an unchanged clipboard is never treated as a selection. Replacement checks the original app, selected text, and any available window, field and selection range. A mismatch keeps the preview open with Copy available. Replacement sends ⌘V and never Return into the source app, so it does not submit a Slack message.
 
-## Install Custom Commands
+## Get started
 
-Requires macOS 15+, Apple Silicon, Node 22+, CMake 3.24+, and Xcode Command Line Tools for building. Install CMake with `brew install cmake`, or set `CMAKE` to its executable path. The installed native commands do not need Node or Raycast running.
+Requires macOS 15+, Apple Silicon, Node 22+, CMake 3.24+, and Xcode Command Line Tools for building. Install CMake with `brew install cmake`, or set `CMAKE` to its executable path. Build tools are needed only to create the app; installed commands run natively.
 
 ```sh
 brew install cmake
@@ -39,17 +56,33 @@ npm run build:selection
 npm run install:selection
 ```
 
-The installer places **GrammarNazi.app** in `~/Applications/`, registers the two Custom Commands, and enables Custom Commands and their launcher visibility. It preserves existing commands and hotkey identities. Existing Custom Command preferences and a previous installation are backed up under `~/Library/Application Support/GrammarNazi/`. Upgrading the former Grammarly Local app moves its hidden installation into that backup folder.
+The installer places **GrammarNazi.app** in `~/Applications/`, installs the two Raycast scripts, and registers Tinycast Custom Commands when Tinycast is installed. Choose either launcher; both open the same native preview.
 
-Restart Tinycast once after installation so 0.9.7-sequoia reloads its Custom Commands. On first use, allow **GrammarNazi** under **System Settings → Privacy & Security → Accessibility**, then return to Slack or your editor, select text and run the command again. The app's preview includes an Accessibility Settings button if permission is missing. To add the app manually with the `+` button, use **⌘⇧G** in the file chooser to open `~/Applications/`.
+### Raycast
+
+The installer writes **Fix Grammar (Selection)** and **Rewrite (Selection)** to:
+
+```text
+~/Library/Application Support/GrammarNazi/raycast/
+```
+
+In Raycast Settings, open **Script Commands**, choose **Add Script Directory**, and select that folder once. Use **⌘⇧G** in the folder chooser to paste the path. The commands appear under **GrammarNazi**; assign hotkeys or aliases in Raycast. Raycast automatically picks up script changes in registered directories. See the [official Script Commands guide](https://manual.raycast.com/script-commands).
+
+The scripts use silent mode to close Raycast before opening the preview. No text argument is needed, and the installed commands use only the macOS shell and native app.
+
+### Tinycast
+
+The installer registers both commands and enables their launcher visibility. Restart Tinycast once so 0.9.7-sequoia reloads its Custom Commands. Assign global shortcuts through Tinycast's Custom Commands settings. Keep **Load shell environment**, **Needs confirmation** and **Show confirmation** off. The installer skips Tinycast registration when Tinycast is not installed.
+
+### Accessibility
+
+Allow **GrammarNazi** under **System Settings → Privacy & Security → Accessibility**, then return to Slack or your editor, select text, and run a command. The preview includes an Accessibility Settings button if permission is missing. To add the app manually with the `+` button, use **⌘⇧G** in the file chooser to open `~/Applications/`.
 
 The resizable preview wraps long words, URLs, and code inside its scroll area. Switch between **Preview** for formatted headings, lists, and emphasis, and **Markdown** for the exact text that Copy and Replace use. Markdown edits retain heading levels, list markers and numbering, indentation, blank lines, emphasis delimiters, links, and code. Only prose is sent for editing; formatting tokens are protected and restored, and malformed model output is rejected. Code-only selections remain unchanged.
 
-Both commands are available in the launcher. Assign global shortcuts through Tinycast's Custom Commands settings. Keep **Load shell environment**, **Needs confirmation** and **Show confirmation** off for these commands. No text argument is required: the native app reads the selection directly.
+For manual setup, `dist/custom-commands.txt` contains the Tinycast shell commands and `dist/raycast/` contains executable Raycast scripts targeting the installed app. `dist/GrammarNazi.app` is also runnable before installation. Keep the project's `models/` folder in place; the app's `Contents/Resources/configuration.json` points to that GGUF file. To move the model, update that path in the source build configuration and rebuild/reinstall the app.
 
-For manual registration, `dist/custom-commands.txt` contains the two exact shell commands. `dist/GrammarNazi.app` is also runnable before installation. Keep the project's `models/` folder in place; the app's `Contents/Resources/configuration.json` points to that GGUF file. To move the model, update that path in the source build configuration and rebuild/reinstall the app.
-
-Canceling a preview or changing tone cancels the current inference job. Qwen runs inside the app on a serial background queue. Model weights stay loaded for retries and tone changes until Copy, Replace, or Cancel closes the preview; closing drains inference and releases its resources before the app exits. Each generation uses fresh context and sampling state. Copy intentionally leaves the result on the clipboard; temporary selection copies and paste operations restore the previous clipboard unless another app has changed it. Clipboard managers can observe this temporary traffic. Password fields and Secure Input are refused.
+Canceling a preview or changing tone cancels the current inference job. Qwen runs inside the app on a serial background queue. Model weights stay loaded for retries and tone changes until Copy, Replace, or Cancel closes the preview; closing drains inference and releases its resources before the app exits. Each generation uses fresh context and sampling state.
 
 ### Native workflow checks
 
@@ -58,17 +91,17 @@ npm run test:selection
 npm run test:selection-models
 ```
 
-The first command checks shared prompts, Markdown structure preservation, response validation, selection identity changes, cancellation before inference, and idempotent Custom Command registration. The second also tests instruction-like selections and translation requests across rewrite tones, runs plain and Markdown passages through the real model and renders demo and long-text previews to `vendor/selection-*.png`, checking wrapping and scrolling. Preview rendering requires a graphical macOS session.
+The first command checks installer replacement and failure recovery, Raycast script metadata and safe shell arguments, shared prompts, Markdown structure preservation, response validation, selection identity changes, cancellation before inference, and idempotent Custom Command registration. The second also tests instruction-like selections and translation requests across rewrite tones, runs plain and Markdown passages through the real model and renders demo and long-text previews to `vendor/selection-*.png`, checking wrapping and scrolling. Preview rendering requires a graphical macOS session.
 
-After granting Accessibility, check a draft in Slack: select text, run each command, replace it, and use Slack's Undo. Also change the selection or switch apps while generation runs and confirm Replace refuses the changed target. These app-specific checks require real Accessibility access; automated core tests do not establish Slack compatibility.
+After granting Accessibility, check a draft in Slack with your launcher: select text, run each command, replace it, and use Slack's Undo. Also change the selection or switch apps while generation runs and confirm Replace refuses the changed target. These app-specific checks require real Accessibility access; automated core tests do not establish Slack compatibility.
 
 ## Build and local inference
 
-The native app and the two Tinycast Custom Commands are the complete installation. No Raycast extension, React runtime, Ollama, or npm dependencies are required. Node 22+ runs the build and setup scripts; the installed app uses Swift and llama.cpp directly.
+Raycast and Tinycast both launch the same native app. Node 22+ runs the setup and build scripts, and CMake compiles the embedded runtime. The installed app uses Swift and llama.cpp directly.
 
 Setup downloads the pinned llama.cpp **b11461** source archive and Qwen3.5-4B Q4_K_M GGUF weights, verifying both with SHA-256. Build compiles static runtime libraries, including chat utilities and embedded Metal shaders; subsequent builds reuse the CMake build cache. Allow roughly 2.74 GB for the model plus the runtime. Existing verified downloads are reused. Model weights stay in `models/`, outside the app bundle.
 
-`npm run build` produces only `dist/GrammarNazi.app`, the command installer, and manual command instructions. It clears old generated extension files and app bundles first. If you rename or move the project directory, rebuild and reinstall so the app records the model's new absolute path.
+`npm run build` produces `dist/GrammarNazi.app`, the Tinycast command installer, Raycast scripts in `dist/raycast/`, and manual command instructions. If you rename or move the project directory, rebuild and reinstall so the app records the model's new absolute path.
 
 If `npm run build:selection` reports **CMake 3.24+ is required**, install it with `brew install cmake` and confirm `cmake --version` works in the same shell, then rerun the build. On Apple Silicon, Homebrew normally provides `/opt/homebrew/bin/cmake`; ensure `/opt/homebrew/bin` is on your `PATH`. For a custom installation, use `CMAKE=/absolute/path/to/cmake npm run build:selection`. The prebuilt app runs without CMake because llama.cpp is already compiled into its executable; CMake is needed only to build it.
 
@@ -80,10 +113,8 @@ Swift calls a small C++ bridge linked directly into the native app. llama.cpp lo
 
 Run `npm test` for native core checks, `npm run test:inference` for the embedded bridge and cancellation/lifecycle checks, and `npm run test:selection-models` for real Qwen edits, model reuse, cancellation recovery, and preview rendering. Preview checks need a graphical macOS session. The installed app has no CMake, Node, or downloaded runtime dependency.
 
-## Privacy and implementation
+## Implementation notes
 
-After setup, editing runs entirely inside the app. Requests and responses stay in memory; inference does not use HTTP or temporary text files. Runtime logging is disabled to avoid persisting selected or generated text. The app does not persist text or editing history. Copy and Replace use the original Markdown source, independent of preview rendering.
-
-The bundle identifier and Custom Command IDs stay stable across the rename to retain macOS settings and shortcuts. They are active identifiers rather than old installations.
+Inference uses no HTTP transport or temporary text files. Copy and Replace use the original Markdown source, independent of preview rendering.
 
 Third-party acknowledgements ship in `assets/Acknowledgements.txt`. Models and downloaded runtime files are excluded from Git.

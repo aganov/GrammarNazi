@@ -112,15 +112,16 @@ struct CapturedSelection {
 
     static func capture() throws -> CapturedSelection {
         try checkEnvironment()
-        // Tinycast dismisses its palette before launching Custom Commands. Allow
-        // its activation transition to complete without ever activating this app.
+        // Both launchers dismiss their palette before starting the app. Wait for
+        // focus to return to the editor without ever activating this app.
+        let launchers: Set<String> = ["com.tinycast.app", "com.raycast.macos"]
         let deadline = Date().addingTimeInterval(0.8)
-        while NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.tinycast.app" && Date() < deadline {
+        while NSWorkspace.shared.frontmostApplication?.bundleIdentifier.map(launchers.contains) == true && Date() < deadline {
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
         guard let app = NSWorkspace.shared.frontmostApplication,
               app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
-              app.bundleIdentifier != "com.tinycast.app" else {
+              app.bundleIdentifier.map(launchers.contains) != true else {
             throw EditingFailure("Select text in Slack or another app, then run this command again.")
         }
         let field = focusedField(app)

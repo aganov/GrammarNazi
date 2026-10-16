@@ -30,7 +30,7 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let copyButton = NSButton(title: "Copy", target: nil, action: nil)
     private let retryButton = NSButton(title: "Try Again", target: nil, action: nil)
     private let tonePicker = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let worker = DispatchQueue(label: "grammarly.selection.inference", qos: .userInitiated)
+    private let worker = DispatchQueue(label: "grammarnazi.selection.inference", qos: .userInitiated)
     private var captured: CapturedSelection?
     private var result: String?
     private var job: EditingJob?
@@ -51,13 +51,13 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
             guard let requested = EditingAction(rawValue: arguments[index + 1]) else { NSApp.terminate(nil); return }
             action = requested
         }
-        let lockPath = FileManager.default.temporaryDirectory.appendingPathComponent("grammarly-selection-preview.lock").path
+        let lockPath = FileManager.default.temporaryDirectory.appendingPathComponent("grammarnazi-selection-preview.lock").path
         lockDescriptor = open(lockPath, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
         guard lockDescriptor >= 0, flock(lockDescriptor, LOCK_EX | LOCK_NB) == 0 else {
-            DistributedNotificationCenter.default().postNotificationName(Notification.Name("local.grammarly.selection.show"), object: nil, userInfo: nil, deliverImmediately: true)
+            DistributedNotificationCenter.default().postNotificationName(Notification.Name("local.grammarnazi.selection.show"), object: nil, userInfo: nil, deliverImmediately: true)
             NSApp.terminate(nil); return
         }
-        DistributedNotificationCenter.default().addObserver(self, selector: #selector(handleRepeatedCommand), name: Notification.Name("local.grammarly.selection.show"), object: nil)
+        DistributedNotificationCenter.default().addObserver(self, selector: #selector(handleRepeatedCommand), name: Notification.Name("local.grammarnazi.selection.show"), object: nil)
         makePanel()
         if demo {
             context.stringValue = "Selected text in Slack · Demo"

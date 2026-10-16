@@ -2,7 +2,7 @@
   "name": "grammarnazi",
   "version": "1.2.1",
   "private": true,
-  "description": "Native macOS grammar and rewrite commands for Tinycast, using Qwen and llama.cpp.",
+  "description": "Private local grammar fixes and rewrites for macOS, launched from Tinycast or Raycast.",
   "license": "MIT",
   "engines": {
     "node": ">=22"
