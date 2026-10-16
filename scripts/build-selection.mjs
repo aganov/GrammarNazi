@@ -18,7 +18,7 @@ await mkdir(resources, { recursive: true });
 const swiftCache = join(tmpdir(), "grammarnazi-swift-cache");
 await mkdir(swiftCache, { recursive: true });
 const flags = ["-O", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", swiftCache];
-execFileSync("/usr/bin/xcrun", ["swiftc", ...flags, ...inferenceFlags, "native/selection/Inference.swift", "native/selection/Markdown.swift", "native/selection/Editing.swift", "native/selection/MarkdownPreview.swift", "native/selection/Selection.swift", "native/selection/SelectionApp.swift", "-o", join(app, "Contents/MacOS/GrammarNazi")], { stdio: "inherit" });
+execFileSync("/usr/bin/xcrun", ["swiftc", ...flags, ...inferenceFlags, "native/selection/ModelLifecycle.swift", "native/selection/CommandRouter.swift", "native/selection/Inference.swift", "native/selection/Markdown.swift", "native/selection/Editing.swift", "native/selection/MarkdownPreview.swift", "native/selection/Selection.swift", "native/selection/SelectionApp.swift", "-o", join(app, "Contents/MacOS/GrammarNazi")], { stdio: "inherit" });
 execFileSync("/usr/bin/xcrun", ["swiftc", ...flags, "native/selection/Markdown.swift", "native/selection/Editing.swift", "native/selection/CustomCommands.swift", "native/selection/InstallCommands.swift", "-o", "dist/install-commands"], { stdio: "inherit" });
 await cp("vendor/llama.cpp-b11461/LICENSE", join(resources, "llama-LICENSE"));
 await cp("assets/app-icon.icns", join(resources, "app-icon.icns"));

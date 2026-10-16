@@ -17,31 +17,60 @@ final class PreviewPanel: NSPanel {
     override func cancelOperation(_ sender: Any?) { onCancel?() }
 }
 
-final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
     private var panel: PreviewPanel!
     private let body = PreviewTextView(frame: NSRect(x: 0, y: 0, width: 580, height: 240))
     private let scroll = NSScrollView()
     private let formatPicker = NSSegmentedControl(labels: ["Preview", "Markdown"], trackingMode: .selectOne, target: nil, action: nil)
     private var displayText = ""
     private let context = NSTextField(labelWithString: "Selected text")
-    private let status = NSTextField(wrappingLabelWithString: "Reading selected text…")
+    let title = NSTextField(labelWithString: "")
+    let status = NSTextField(wrappingLabelWithString: "Reading selected text…")
     private let spinner = NSProgressIndicator()
     private let replaceButton = NSButton(title: "Replace", target: nil, action: nil)
     private let copyButton = NSButton(title: "Copy", target: nil, action: nil)
     private let retryButton = NSButton(title: "Try Again", target: nil, action: nil)
     private let tonePicker = NSPopUpButton(frame: .zero, pullsDown: false)
     private let worker = DispatchQueue(label: "grammarnazi.selection.inference", qos: .userInitiated)
-    private var captured: CapturedSelection?
-    private var result: String?
+    private(set) var captured: CapturedSelection?
+    private(set) var result: String?
     private var job: EditingJob?
-    private var inference: EmbeddedInferenceSession?
-    private var closing = false
+    private let model: ResidentModel
+    private let lifecycle: ModelLifecycle
+    private let captureSelection: () throws -> CapturedSelection
+    private let resourceDirectory: URL?
+    private let terminate: () -> Void
+    private var router: CommandRouter?
+    private var idleTimer: Timer?
+    private var pressureSource: DispatchSourceMemoryPressure?
+    private var capturing = false
+    private var pendingAction: EditingAction?
+    private var modelLoaded = false
+    private var phase: ModelPhase?
+    private(set) var statusItem: NSStatusItem?
+    private let modelMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let countdownMenuItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private var previewMenuItem: NSMenuItem?
+    private var timeoutItems: [NSMenuItem] = []
     private var readyToTerminate = false
-    private var generation = 0
     private var action: EditingAction = .grammar
     private var demo = false
-    private var lockDescriptor: Int32 = -1
-    private var resources: URL { Bundle.main.resourceURL! }
+    private var resources: URL { resourceDirectory ?? Bundle.main.resourceURL! }
+
+    init(model: ResidentModel = ResidentModel { try EmbeddedInferenceSession() }, lifecycle: ModelLifecycle = ModelLifecycle(),
+         resources: URL? = nil, capture: (() throws -> CapturedSelection)? = nil,
+         terminate: @escaping () -> Void = { NSApp.terminate(nil) }) {
+        self.model = model; self.lifecycle = lifecycle; self.resourceDirectory = resources; self.terminate = terminate
+        self.captureSelection = capture ?? {
+            guard AXIsProcessTrusted() else {
+                let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+                _ = AXIsProcessTrustedWithOptions(options)
+                throw EditingFailure("Allow GrammarNazi in System Settings → Privacy & Security → Accessibility, then return to your app and run the command again.")
+            }
+            return try CapturedSelection.capture()
+        }
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -51,15 +80,9 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
             guard let requested = EditingAction(rawValue: arguments[index + 1]) else { NSApp.terminate(nil); return }
             action = requested
         }
-        let lockPath = FileManager.default.temporaryDirectory.appendingPathComponent("grammarnazi-selection-preview.lock").path
-        lockDescriptor = open(lockPath, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
-        guard lockDescriptor >= 0, flock(lockDescriptor, LOCK_EX | LOCK_NB) == 0 else {
-            DistributedNotificationCenter.default().postNotificationName(Notification.Name("local.grammarnazi.selection.show"), object: nil, userInfo: nil, deliverImmediately: true)
-            NSApp.terminate(nil); return
-        }
-        DistributedNotificationCenter.default().addObserver(self, selector: #selector(handleRepeatedCommand), name: Notification.Name("local.grammarnazi.selection.show"), object: nil)
-        makePanel()
         if demo {
+            makePanel()
+            lifecycle.openPreview()
             context.stringValue = "Selected text in Slack · Demo"
             let fixture = arguments.firstIndex(of: "--fixture").flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil }
             displayText = fixture.flatMap { try? String(contentsOfFile: $0, encoding: .utf8) } ?? "Could you send me an update about ticket 4821 when you have a moment?"
@@ -87,12 +110,23 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
             }
         } else {
-            // Capture before showing any window so the source app keeps focus.
-            readSelectionAndEdit()
+            let lockPath = FileManager.default.temporaryDirectory.appendingPathComponent("grammarnazi-selection-preview.lock").path
+            router = CommandRouter(action: action, lockPath: lockPath)
+            router!.start(onOwner: { [weak self] in
+                guard let self else { return }
+                self.makePanel(); self.observeMemoryAndWake()
+                self.startEdit(self.action)
+            }, onRequest: { [weak self] action in self?.startEdit(action) }, onForwarded: { [weak self] in
+                self?.readyToTerminate = true; NSApp.terminate(nil)
+            }, onFailure: { [weak self] message in
+                let alert = NSAlert(); alert.messageText = "GrammarNazi could not start"; alert.informativeText = message
+                alert.runModal()
+                self?.readyToTerminate = true; NSApp.terminate(nil)
+            })
         }
     }
 
-    private func makePanel() {
+    func makePanel() {
         panel = PreviewPanel(contentRect: NSRect(x: 0, y: 0, width: 640, height: 520), styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.contentMinSize = NSSize(width: 520, height: 400)
         panel.title = "GrammarNazi"
@@ -113,7 +147,7 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         content.wantsLayer = true
         content.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         panel.contentView = content
-        let title = NSTextField(labelWithString: action.title)
+        title.stringValue = action.title
         title.font = .systemFont(ofSize: 19, weight: .semibold)
         context.font = .systemFont(ofSize: 12)
         context.textColor = .secondaryLabelColor
@@ -197,44 +231,61 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func showExisting() {
-        guard panel != nil, !closing else { return }
+        guard panel != nil, lifecycle.previewOpen, !lifecycle.quitting else { return }
         panel.orderFrontRegardless()
         panel.makeKey()
         panel.makeFirstResponder(body)
     }
 
-    @objc private func handleRepeatedCommand() {
-        guard !closing else { return }
-        // After granting Accessibility, running the command again should retry
-        // selection capture rather than bring back the old permission message.
-        if captured == nil && !demo && AXIsProcessTrusted() {
-            panel.orderOut(nil)
-            readSelectionAndEdit()
-        } else { showExisting() }
+    func startEdit(_ requested: EditingAction) {
+        guard !lifecycle.quitting else { return }
+        idleTimer?.invalidate(); idleTimer = nil
+        job?.cancel(); job = nil
+        lifecycle.openPreview()
+        panel.orderOut(nil)
+        clearSelection()
+        action = requested; title.stringValue = action.title
+        tonePicker.isHidden = action != .rewrite
+        formatPicker.selectedSegment = 0
+        // Selection.capture pumps the run loop while waiting for launcher focus.
+        // Coalesce reentrant commands and never publish an older capture.
+        if capturing { pendingAction = requested; return }
+        readSelectionAndEdit()
     }
 
     private func readSelectionAndEdit() {
-        do {
-            guard AXIsProcessTrusted() else {
-                // macOS owns this consent; installation never grants it silently.
-                let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-                _ = AXIsProcessTrustedWithOptions(options)
-                throw EditingFailure("Allow GrammarNazi in System Settings → Privacy & Security → Accessibility, then return to your app and run the command again.")
+        let token = lifecycle.generation
+        capturing = true
+        defer {
+            capturing = false
+            if let requested = pendingAction {
+                pendingAction = nil
+                let pendingToken = lifecycle.generation
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.lifecycle.accepts(pendingToken) else { return }
+                    self.startEdit(requested)
+                }
             }
-            captured = try CapturedSelection.capture()
+        }
+        do {
+            let selection = try captureSelection()
+            guard lifecycle.accepts(token) else { return }
+            captured = selection
             context.stringValue = "Selected text in \(captured!.app.localizedName ?? "your app")"
             displayText = captured!.text
             updateBody()
             showExisting()
             generate()
-        } catch { showError(error); showExisting() }
+        } catch {
+            guard lifecycle.accepts(token) else { return }
+            showError(error); showExisting()
+        }
     }
 
     private func generate() {
-        guard let captured, !demo, !closing else { return }
+        guard let captured, !demo, lifecycle.previewOpen, !lifecycle.quitting else { return }
         job?.cancel()
-        generation += 1
-        let current = generation
+        let current = lifecycle.nextGeneration()
         let task = EditingJob()
         job = task; result = nil
         replaceButton.isEnabled = false; copyButton.isEnabled = false; retryButton.isHidden = true
@@ -244,6 +295,14 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let tone = RewriteTone.allCases[tonePicker.indexOfSelectedItem]
         let action = self.action
         worker.async { [self] in
+            defer {
+                let loaded = model.isModelLoaded
+                DispatchQueue.main.async {
+                    guard !self.lifecycle.quitting else { return }
+                    self.modelLoaded = loaded; self.phase = loaded ? .ready : nil
+                    self.refreshStatusItem()
+                }
+            }
             do {
                 struct Configuration: Decodable { let modelPath: String }
                 let configuration = try JSONDecoder().decode(Configuration.self, from: Data(contentsOf: resources.appendingPathComponent("configuration.json")))
@@ -251,12 +310,17 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 let result: String
                 if EditingRules.requiresInference(captured.text) {
                     let request = try rules.request(text: captured.text, action: action, tone: tone)
-                    if inference == nil { inference = try EmbeddedInferenceSession() }
-                    let response = try task.run(session: inference!, model: URL(fileURLWithPath: configuration.modelPath), request: request)
+                    model.onPhase = { [weak self] phase in
+                        DispatchQueue.main.async { [weak self] in
+                            guard let self, !self.lifecycle.quitting else { return }
+                            self.phase = phase; self.refreshStatusItem()
+                        }
+                    }
+                    let response = try task.run(session: model, model: URL(fileURLWithPath: configuration.modelPath), request: request)
                     result = try EditingRules.completion(response, original: captured.text)
                 } else { result = captured.text }
                 DispatchQueue.main.async {
-                    guard current == self.generation, !self.closing else { return }
+                    guard self.lifecycle.accepts(current) else { return }
                     self.job = nil; self.result = result; self.displayText = result; self.updateBody()
                     self.spinner.stopAnimation(nil); self.spinner.isHidden = true
                     self.status.stringValue = result == captured.text ? "Your text already looks correct." : "Review the result. Return replaces; ⌘C copies; Esc cancels."
@@ -264,7 +328,7 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
             } catch {
                 DispatchQueue.main.async {
-                    guard current == self.generation, !self.closing else { return }
+                    guard self.lifecycle.accepts(current) else { return }
                     self.job = nil
                     self.showError(error)
                 }
@@ -307,29 +371,164 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         catch { showError(error); showExisting() }
     }
 
-    @objc private func cancel() {
-        guard !closing else { return }
-        closing = true; generation += 1
-        job?.cancel(); panel?.orderOut(nil)
-        // Drain the worker before freeing model resources and exiting. The UI never waits.
+    @objc func cancel() {
+        guard !lifecycle.quitting else { return }
+        let token = lifecycle.closePreview()
+        job?.cancel(); job = nil; pendingAction = nil
+        panel?.orderOut(nil); clearSelection()
+        // The idle interval begins only after cancellation and worker cleanup finish.
         worker.async { [self] in
-            inference = nil
-            DispatchQueue.main.async { self.readyToTerminate = true; NSApp.terminate(nil) }
+            let loaded = model.isModelLoaded
+            DispatchQueue.main.async {
+                guard token == self.lifecycle.generation, !self.lifecycle.previewOpen, !self.lifecycle.quitting else { return }
+                guard loaded, !self.demo else { self.quit(); return }
+                self.modelLoaded = true; self.phase = .ready
+                self.lifecycle.workerDrained(token: token, now: Date())
+                self.armIdleTimer(); self.refreshStatusItem()
+            }
         }
     }
+
+    private func clearSelection() {
+        captured = nil; result = nil; displayText = ""
+        body.textStorage?.setAttributedString(NSAttributedString(string: ""))
+        context.stringValue = "Selected text"
+        status.stringValue = "Reading selected text…"; status.textColor = .secondaryLabelColor
+        copyButton.isEnabled = false; replaceButton.isEnabled = false; retryButton.isHidden = true
+        spinner.stopAnimation(nil); spinner.isHidden = true
+    }
+
+    @objc func quit() {
+        guard !lifecycle.quitting else { return }
+        lifecycle.quit(); router?.stopAccepting()
+        idleTimer?.invalidate(); idleTimer = nil
+        pressureSource?.cancel(); pressureSource = nil
+        pendingAction = nil
+        job?.cancel(); job = nil; panel?.orderOut(nil); clearSelection()
+        // Keep the lock until process exit so a new launch retries during shutdown.
+        worker.async { [self] in
+            model.unload()
+            DispatchQueue.main.async { self.readyToTerminate = true; self.terminate() }
+        }
+    }
+
+    private func armIdleTimer() {
+        idleTimer?.invalidate(); idleTimer = nil
+        guard !lifecycle.quitting else { return }
+        if lifecycle.expired(at: Date()) { quit(); return }
+        guard let deadline = lifecycle.deadline else { return }
+        let timer = Timer(fire: deadline, interval: 0, repeats: false) { [weak self] _ in
+            self?.armIdleTimer()
+        }
+        idleTimer = timer; RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func observeMemoryAndWake() {
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+        source.setEventHandler { [weak self] in
+            guard let self, let source = self.pressureSource else { return }
+            self.releaseForMemoryPressure(critical: source.data.contains(.critical))
+        }
+        pressureSource = source; source.resume()
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(didWake), name: NSWorkspace.didWakeNotification, object: nil)
+    }
+
+    @objc func didWake() { armIdleTimer(); refreshStatusItem() }
+
+    func releaseForMemoryPressure(critical: Bool) {
+        guard !demo, !lifecycle.quitting else { return }
+        if critical, job != nil {
+            job?.cancel(); job = nil; lifecycle.nextGeneration()
+            if lifecycle.previewOpen {
+                showError(EditingFailure("Editing stopped to free memory. Try Again to reload the model."))
+            }
+        }
+        // Warning waits for current work; critical cancellation is cooperative.
+        // Destruction always runs behind inference on the same serial worker.
+        worker.async { [self] in
+            model.unload()
+            DispatchQueue.main.async {
+                guard !self.lifecycle.quitting else { return }
+                self.modelLoaded = false; self.phase = nil; self.refreshStatusItem()
+                if !self.lifecycle.previewOpen { self.quit() }
+            }
+        }
+    }
+
+    private func refreshStatusItem() {
+        guard !demo else { return }
+        guard modelLoaded || phase == .loading || phase == .working else {
+            if let item = statusItem { NSStatusBar.system.removeStatusItem(item) }
+            statusItem = nil; timeoutItems = []; previewMenuItem = nil
+            // Items may be reused when a later request reloads the model.
+            modelMenuItem.menu?.removeItem(modelMenuItem)
+            countdownMenuItem.menu?.removeItem(countdownMenuItem)
+            return
+        }
+        if statusItem == nil {
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+            let image = NSImage(systemSymbolName: "text.badge.checkmark", accessibilityDescription: "GrammarNazi")
+            image?.isTemplate = true
+            item.button?.image = image
+            if image == nil { item.button?.title = "GN" }
+            let menu = NSMenu(); menu.delegate = self; menu.autoenablesItems = false
+            menu.addItem(withTitle: "GrammarNazi", action: nil, keyEquivalent: "").isEnabled = false
+            menu.addItem(modelMenuItem); modelMenuItem.isEnabled = false
+            menu.addItem(countdownMenuItem); countdownMenuItem.isEnabled = false
+            menu.addItem(.separator())
+            let retention = NSMenuItem(title: "Keep Model Loaded", action: nil, keyEquivalent: "")
+            let options = NSMenu()
+            timeoutItems = ModelLifecycle.timeoutChoices.map { minutes in
+                let option = NSMenuItem(title: minutes == 0 ? "Until Quit" : "\(minutes) minutes", action: #selector(changeTimeout(_:)), keyEquivalent: "")
+                option.target = self; option.tag = minutes; options.addItem(option)
+                return option
+            }
+            retention.submenu = options; menu.addItem(retention)
+            menu.addItem(.separator())
+            let preview = NSMenuItem(title: "Show Preview", action: #selector(showExisting), keyEquivalent: "")
+            preview.target = self; menu.addItem(preview); previewMenuItem = preview
+            let quitItem = NSMenuItem(title: "Quit GrammarNazi", action: #selector(quit), keyEquivalent: "q")
+            quitItem.target = self; menu.addItem(quitItem)
+            item.menu = menu; statusItem = item
+        }
+        statusItem?.button?.toolTip = "GrammarNazi — \(phase?.rawValue ?? ModelPhase.ready.rawValue)"
+        updateMenu()
+    }
+
+    private func updateMenu() {
+        modelMenuItem.title = "Model: \(phase?.rawValue ?? ModelPhase.ready.rawValue)"
+        countdownMenuItem.isHidden = lifecycle.idleSince == nil
+        if let deadline = lifecycle.deadline {
+            let remaining = max(0, Int(ceil(deadline.timeIntervalSinceNow / 60)))
+            countdownMenuItem.title = "Unloads in \(remaining) \(remaining == 1 ? "minute" : "minutes")"
+        } else { countdownMenuItem.title = "Stays loaded until quit" }
+        previewMenuItem?.isEnabled = lifecycle.previewOpen && !lifecycle.quitting
+        timeoutItems.forEach { $0.state = $0.tag == lifecycle.minutes ? .on : .off }
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) { updateMenu() }
+
+    @objc func changeTimeout(_ sender: NSMenuItem) {
+        lifecycle.setMinutes(sender.tag)
+        armIdleTimer(); updateMenu()
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if readyToTerminate { return .terminateNow }
-        cancel()
+        quit()
         return .terminateCancel
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool { cancel(); return false }
     func applicationWillTerminate(_ notification: Notification) {
         job?.cancel()
-        DistributedNotificationCenter.default().removeObserver(self)
-        if lockDescriptor >= 0 { close(lockDescriptor) }
+        idleTimer?.invalidate(); pressureSource?.cancel()
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        if let item = statusItem { NSStatusBar.system.removeStatusItem(item) }
+        router?.stop()
     }
 }
 
+#if !RESIDENT_TESTS
 @main struct Main {
     static func main() {
         let app = NSApplication.shared
@@ -339,3 +538,4 @@ final class SelectionApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         withExtendedLifetime(delegate) {}
     }
 }
+#endif

@@ -11,16 +11,21 @@ const swiftCache = join(tmpdir(), "grammarnazi-swift-cache");
 await mkdir(swiftCache, { recursive: true });
 execFileSync("/usr/bin/xcrun", ["swiftc", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", swiftCache, "native/selection/Markdown.swift", "native/selection/Editing.swift", "native/selection/CustomCommands.swift", "tests/selection_core.swift", "-o", "vendor/selection-core-tests"], { stdio: "inherit" });
 execFileSync(resolve("vendor/selection-core-tests"), [], { stdio: "inherit" });
+execFileSync("/usr/bin/xcrun", ["swiftc", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", swiftCache, "native/selection/Markdown.swift", "native/selection/Editing.swift", "native/selection/ModelLifecycle.swift", "native/selection/CommandRouter.swift", "tests/resident_lifecycle.swift", "-o", "vendor/resident-lifecycle-tests"], { stdio: "inherit" });
+execFileSync(resolve("vendor/resident-lifecycle-tests"), [], { stdio: "inherit" });
 if (process.argv.includes("--inference") || process.argv.includes("--models")) {
   const inferenceFlags = await buildInference();
-  execFileSync("/usr/bin/xcrun", ["swiftc", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", swiftCache, ...inferenceFlags, "native/selection/Markdown.swift", "native/selection/Editing.swift", "native/selection/Inference.swift", "tests/embedded_runtime.swift", "-o", "vendor/inference-tests"], { stdio: "inherit" });
+  execFileSync("/usr/bin/xcrun", ["swiftc", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", swiftCache, ...inferenceFlags, "native/selection/Markdown.swift", "native/selection/Editing.swift", "native/selection/ModelLifecycle.swift", "native/selection/Inference.swift", "tests/embedded_runtime.swift", "-o", "vendor/inference-tests"], { stdio: "inherit" });
   execFileSync(resolve("vendor/inference-tests"), [], { stdio: "inherit" });
   if (process.argv.includes("--models")) {
-    execFileSync("/usr/bin/xcrun", ["swiftc", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", swiftCache, ...inferenceFlags, "native/selection/Inference.swift", "native/selection/Markdown.swift", "native/selection/Editing.swift", "tests/selection_models.swift", "-o", "vendor/selection-model-tests"], { stdio: "inherit" });
+    execFileSync("/usr/bin/xcrun", ["swiftc", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", swiftCache, ...inferenceFlags, "native/selection/Inference.swift", "native/selection/Markdown.swift", "native/selection/Editing.swift", "native/selection/ModelLifecycle.swift", "tests/selection_models.swift", "-o", "vendor/selection-model-tests"], { stdio: "inherit" });
     execFileSync(resolve("vendor/selection-model-tests"), [resolve("dist/GrammarNazi.app/Contents/Resources")], { stdio: "inherit" });
   }
 }
 if (process.argv.includes("--preview")) {
+  const inferenceFlags = await buildInference();
+  execFileSync("/usr/bin/xcrun", ["swiftc", "-D", "RESIDENT_TESTS", "-swift-version", "5", "-target", "arm64-apple-macosx15.0", "-module-cache-path", swiftCache, ...inferenceFlags, "native/selection/ModelLifecycle.swift", "native/selection/CommandRouter.swift", "native/selection/Inference.swift", "native/selection/Markdown.swift", "native/selection/Editing.swift", "native/selection/MarkdownPreview.swift", "native/selection/Selection.swift", "native/selection/SelectionApp.swift", "tests/resident_app.swift", "-o", "vendor/resident-app-tests"], { stdio: "inherit" });
+  execFileSync(resolve("vendor/resident-app-tests"), [resolve("dist/GrammarNazi.app/Contents/Resources")], { stdio: "inherit", timeout: 30000 });
   execFileSync(resolve("dist/GrammarNazi.app/Contents/MacOS/GrammarNazi"), ["--action", "rewrite", "--render-preview", resolve("vendor/selection-preview.png")], { stdio: "inherit", timeout: 15000 });
   for (const raw of [false, true]) {
     const output = resolve(`vendor/selection-long-${raw ? "markdown" : "preview"}.png`);

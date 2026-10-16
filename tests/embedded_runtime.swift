@@ -30,6 +30,7 @@ final class ControlledSession: InferenceSession, @unchecked Sendable {
             fatalError("Pre-cancelled native call ran")
         } catch is CancellationError {}
         require(native.modelLoadCount == 0, "Cancelled load retained weights")
+        require(!native.isModelLoaded, "Pre-cancelled session reports loaded")
         for data in [Data("{}".utf8), request, Data("\0".utf8)] {
             do {
                 _ = try native.run(model: model, request: data, isCancelled: { false })
@@ -37,6 +38,7 @@ final class ControlledSession: InferenceSession, @unchecked Sendable {
             } catch {}
         }
         require(native.modelLoadCount == 0, "Failed load retained weights")
+        require(!native.isModelLoaded, "Failed session reports loaded")
         print("PASS native cancellation, invalid requests, missing model, and repeated failure cleanup")
 
         let worker = DispatchQueue(label: "test.inference")

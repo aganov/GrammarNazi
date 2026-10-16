@@ -15,9 +15,9 @@ Built for **Apple Silicon and macOS 15+**. Launch from **Raycast Script Commands
 
 ## Privacy built into the workflow
 
-GrammarNazi processes selected text inside the app on your Mac. It does not send selections to a cloud AI service, and no AI account or API key is required. Inference requests and responses stay in memory; the app saves no selected text or editing history, and runtime prompt logging is disabled. Your preferred rewrite tone is saved locally.
+GrammarNazi processes selected text inside the app on your Mac. It does not send selections to a cloud AI service, and no AI account or API key is required. Inference requests and responses stay in memory; the app saves no selected text or editing history, and runtime prompt logging is disabled. Your preferred rewrite tone and model idle timeout are saved locally.
 
-Setup needs an internet connection to download the model and runtime source. Once built, the app runs locally without an inference server or background model daemon. Closing the preview releases the loaded model and exits the app.
+Setup needs an internet connection to download the model and runtime source. Once built, the app runs locally without an inference server or separate background model daemon. Closing the preview clears its text and keeps the loaded model ready for your next edit. By default, the app unloads the model and quits after 15 minutes idle.
 
 You grant macOS Accessibility access so GrammarNazi can read and replace your selection. Some apps require a temporary clipboard copy to capture text, and replacement uses the clipboard to paste your edit. The previous clipboard is restored unless another app has changed it; **Copy** intentionally leaves your result there. Clipboard managers can observe these operations. Password fields and Secure Input are refused.
 
@@ -82,7 +82,15 @@ The resizable preview wraps long words, URLs, and code inside its scroll area. S
 
 For manual setup, `dist/custom-commands.txt` contains the Tinycast shell commands and `dist/raycast/` contains executable Raycast scripts targeting the installed app. `dist/GrammarNazi.app` is also runnable before installation. Keep the project's `models/` folder in place; the app's `Contents/Resources/configuration.json` points to that GGUF file. To move the model, update that path in the source build configuration and rebuild/reinstall the app.
 
-Canceling a preview or changing tone cancels the current inference job. Qwen runs inside the app on a serial background queue. Model weights stay loaded for retries and tone changes until Copy, Replace, or Cancel closes the preview; closing drains inference and releases its resources before the app exits. Each generation uses fresh context and sampling state.
+Canceling a preview or changing tone cancels the current inference job. Running either launcher command again cancels the previous edit and captures your current selection with the requested Grammar or Rewrite action. Qwen runs inside the app on a serial background queue. Each generation uses fresh context and sampling state; only model weights and chat-template metadata are retained between edits.
+
+### Model status and idle timeout
+
+A proofreading icon appears in the menu bar while the model is loading or loaded. Its menu shows **Loading…**, **Working…**, or **Ready**, plus the remaining idle time. **Keep Model Loaded** offers **5 minutes**, **15 minutes** (default), **30 minutes**, and **Until Quit**. Your selection is remembered across launches. **Show Preview** returns to an open preview; **Quit GrammarNazi** cancels work and releases the model.
+
+Copy, Replace, Cancel, Escape, and the close button close the preview without quitting the warm app. The idle countdown starts after canceled work finishes, and stays paused while a preview is open. Changing the timeout uses the original idle start; waking from sleep checks whether the deadline has passed. Once it expires, the app releases the model and exits, removing its menu bar icon. If no model loaded successfully, closing the preview exits immediately.
+
+macOS memory pressure can release the model even with **Until Quit** selected. A warning lets current work finish before unloading; critical pressure cancels it first. Completed results remain in an open preview, interrupted work offers Try Again, and the next edit reloads the model. Without an open preview, the app quits after unloading. The app starts only when invoked: no login item, listening socket, or separate server is installed.
 
 ### Native workflow checks
 
@@ -91,9 +99,9 @@ npm run test:selection
 npm run test:selection-models
 ```
 
-The first command checks installer replacement and failure recovery, Raycast script metadata and safe shell arguments, shared prompts, Markdown structure preservation, response validation, selection identity changes, cancellation before inference, and idempotent Custom Command registration. The second also tests instruction-like selections and translation requests across rewrite tones, runs plain and Markdown passages through the real model and renders demo and long-text previews to `vendor/selection-*.png`, checking wrapping and scrolling. Preview rendering requires a graphical macOS session.
+The first command checks installer replacement and failure recovery, Raycast script metadata and safe shell arguments, shared prompts, Markdown structure preservation, response validation, selection identity changes, cancellation before inference, idempotent Custom Command registration, fake-clock idle deadlines and preferences, retained-session cleanup, and acknowledged command forwarding across processes. Forwarding checks require macOS distributed-notification access. The second also tests instruction-like selections and translation requests across rewrite tones, verifies real model reuse across separate previews, records load and generation timings, exercises native menu and preview lifecycle behavior with controlled inference, and renders demo and long-text previews to `vendor/selection-*.png`, checking wrapping and scrolling. AppKit checks and preview rendering require a graphical macOS session.
 
-After granting Accessibility, check a draft in Slack with your launcher: select text, run each command, replace it, and use Slack's Undo. Also change the selection or switch apps while generation runs and confirm Replace refuses the changed target. These app-specific checks require real Accessibility access; automated core tests do not establish Slack compatibility.
+After granting Accessibility, check a draft in Slack with your launcher: select text, run each command, replace it, and use Slack's Undo. Check that the menu icon stays visible after closing, then invoke another action on a fresh selection. Run a shortcut during generation and confirm only the newest edit appears. Also change the selection or switch apps while generation runs and confirm Replace refuses the changed target. These app-specific checks require real Accessibility access; automated tests use controlled selections and do not establish Slack compatibility.
 
 ## Build and local inference
 

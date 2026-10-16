@@ -1,0 +1,11 @@
+# GN application icon
+
+Created with the built-in `image_gen` tool. The selected final image is `app-icon.png`. `npm run build:icon` packages its macOS icon sizes into `app-icon.icns` and creates `app-icon-64.png` for Raycast, preserving alpha transparency.
+
+## Initial generation prompt
+
+Use case: logo-brand. Asset type: final macOS application icon for a local writing app. Create a single square 1024x1024 icon, straight-on and flat, with a pure black rounded-square tile, transparent outside the tile, and a bold white uppercase GN monogram centered inside it. Exact text: GN, letter G followed by letter N. The letterforms should be highly geometric and angular: heavy strokes, forward-leaning slanted cuts, sharp chamfered corners, and strong negative-space counters. G must have a clear open right side and a recognizable inward horizontal crossbar. N must have two strong uprights and a clear connecting diagonal. Make both letters instantly readable as GN at small app-icon sizes. Keep the two letters balanced and closely spaced, with generous black padding around them. Use only solid black and solid white, with clean antialiased edges. The black tile should fill roughly 90 percent of the canvas with even transparent margins. No gradients, texture, shadows, outlines, border, perspective, mockup, secondary text, lightning-bolt shapes, extra emblems, or watermark.
+
+## Final edit prompt
+
+Use case: logo-brand. Image 1 is the edit target, a GN application icon. Keep the same exact letters GN, white-on-black palette, flat geometric aesthetic, forward-leaning slant, chamfered corners, and centered side-by-side arrangement. Change the letter proportions only: make G and N tall and condensed so that the white monogram occupies about 70 percent of the icon height and 74 percent of its width, rather than looking like a wide short wordmark. Both letters must remain unmistakably readable as uppercase G and N; preserve the G's open right counter and crossbar and the N's connecting diagonal. Keep generous even padding. The background is a black rounded-square app tile filling 90 percent of the square canvas, with true transparency outside the rounded tile. Solid black and solid white only; no texture, gradients, shadows, extra marks, lightning bolts, emblems, borders, slogans, or watermark.

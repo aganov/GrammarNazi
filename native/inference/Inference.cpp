@@ -16,6 +16,7 @@ using Clock = std::chrono::steady_clock;
 struct Cancelled {};
 struct Operation {
     gn_cancel_check cancelled;
+    gn_phase_callback phase;
     void * user;
     Clock::time_point deadline;
     bool stopped() const { return (cancelled && cancelled(user)) || Clock::now() >= deadline; }
@@ -52,6 +53,7 @@ extern "C" gn_session * gn_session_create() {
 }
 extern "C" void gn_session_destroy(gn_session * session) { delete session; }
 extern "C" size_t gn_session_load_count(const gn_session * session) { return session->loads; }
+extern "C" bool gn_session_is_loaded(const gn_session * session) { return session && session->model && session->templates; }
 extern "C" void gn_string_free(char * string) { std::free(string); }
 
 static std::string generate(gn_session & session, const char * path, const char * request, Operation & op) {
@@ -64,19 +66,26 @@ static std::string generate(gn_session & session, const char * path, const char 
     if (limit < 1 || limit > 4096 || !std::isfinite(temperature) || temperature < 0 || temperature > 2)
         throw std::runtime_error("Invalid inference limits.");
     if (!session.model || !session.templates || session.path != path) {
+        if (op.phase) op.phase(GN_PHASE_LOADING, op.user);
         session.templates.reset(); session.model.reset(); session.path.clear();
         auto params = llama_model_default_params();
         params.n_gpu_layers = 99;
         params.progress_callback = [](float, void * data) { return !static_cast<Operation *>(data)->stopped(); };
         params.progress_callback_user_data = &op;
-        session.model.reset(llama_model_load_from_file(path, params));
+        // Commit only a complete load. Cancellation must not retain partial weights.
+        std::unique_ptr<llama_model, decltype(&llama_model_free)> model(llama_model_load_from_file(path, params), llama_model_free);
         op.check();
-        if (!session.model) throw std::runtime_error("Could not load the GGUF model. Check the model path and available memory.");
+        if (!model) throw std::runtime_error("Could not load the GGUF model. Check the model path and available memory.");
+        auto templates = common_chat_templates_init(model.get(), "");
+        op.check();
+        if (!templates) throw std::runtime_error("Could not initialize the model chat template.");
+        session.model = std::move(model);
+        session.templates = std::move(templates);
         session.path = path;
         session.loads++;
-        session.templates = common_chat_templates_init(session.model.get(), "");
     }
     op.check();
+    if (op.phase) op.phase(GN_PHASE_WORKING, op.user);
     // A fresh context and sampler prevent text/history leaking between requests.
     op.deadline = Clock::now() + std::chrono::seconds(120);
     auto params = llama_context_default_params();
@@ -152,13 +161,13 @@ static std::string generate(gn_session & session, const char * path, const char 
     return result.dump();
 }
 extern "C" int gn_session_run(gn_session * session, const char * model_path, const char * request,
-                                gn_cancel_check cancelled, void * user, char ** output, char ** error) {
+                                gn_cancel_check cancelled, gn_phase_callback phase, void * user, char ** output, char ** error) {
     *output = nullptr; *error = nullptr;
     try {
         if (!session || !model_path || !request) throw std::runtime_error("Invalid inference session.");
         std::unique_lock<std::mutex> lock(session->mutex, std::try_to_lock);
         if (!lock.owns_lock()) throw std::runtime_error("Inference is already running.");
-        Operation op{cancelled, user, Clock::now() + std::chrono::seconds(90)};
+        Operation op{cancelled, phase, user, Clock::now() + std::chrono::seconds(90)};
         *output = copy(generate(*session, model_path, request, op));
         return 0;
     } catch (const Cancelled &) { return 2; }

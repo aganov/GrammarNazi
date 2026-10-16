@@ -24,6 +24,13 @@ private final class CancellationLimit {
         weak var releasedSession: EmbeddedInferenceSession?
         do {
             let session = try EmbeddedInferenceSession()
+            var phases: [ModelPhase] = []
+            var loadStarted: Date?, generationStarted: Date?
+            session.onPhase = { phase in
+                phases.append(phase)
+                if phase == .loading { loadStarted = Date() }
+                if phase == .working { generationStarted = Date() }
+            }
             releasedSession = session
             let model = URL(fileURLWithPath: config.modelPath)
             let baseline = try rules.request(text: "She dont have ticket 4821.", action: .grammar, tone: .natural)
@@ -33,23 +40,29 @@ private final class CancellationLimit {
                 fatalError("Loading was not cancelled")
             } catch is CancellationError {}
             guard session.modelLoadCount == 0 else { fatalError("Cancelled load counted as successful") }
+            guard !session.isModelLoaded else { fatalError("Cancelled load retained partial weights") }
             print("PASS cancellation during real model loading")
             for (action, text) in cases {
                 let request = try rules.request(text: text, action: action, tone: .professional)
                 let start = Date()
+                phases = []; loadStarted = nil; generationStarted = nil
                 let data = try EditingJob().run(session: session, model: URL(fileURLWithPath: config.modelPath), request: request)
                 let result = try EditingRules.completion(data, original: text)
                 guard result.contains("4821"), !result.isEmpty else { fatalError("The model lost the ticket/invoice number") }
                 if text == markdown {
-                    guard result.hasPrefix("# **Release** notes\n\n- "), result.contains("\n1. "), result.contains("**4821**"), result.contains("`invoice_id`"), result.hasSuffix("```swift\nlet dont = \"unchanged\"\n```\n") else { fatalError("Markdown formatting changed") }
+                    let checks = ["heading": result.hasPrefix("# **Release** notes\n\n- "), "numbering": result.contains("\n1. "), "bold": result.contains("**4821**"), "inline code": result.contains("`invoice_id`"), "code block": result.hasSuffix("```swift\nlet dont = \"unchanged\"\n```\n")]
+                    guard checks.values.allSatisfy({ $0 }) else { fatalError("Markdown check failed: \(checks.filter { !$0.value }.keys.sorted())") }
                     guard !result.contains("GNKEEP") else { fatalError("Internal markers leaked into output") }
                 } else if action == .grammar {
                     guard result.contains("doesn't") || result.contains("does not") else { fatalError("The grammar correction was not applied") }
                     guard result.contains("has the report") else { fatalError("Verb agreement was not corrected") }
                 }
                 guard session.modelLoadCount == 1 else { fatalError("Model weights were reloaded") }
+                guard session.isModelLoaded, phases.last == .working, let working = generationStarted else { fatalError("Runtime status missing") }
+                let loadingSeconds = loadStarted.map { working.timeIntervalSince($0) } ?? 0
+                print(String(format: "TIMING load=%.3fs generation=%.3fs total=%.3fs", loadingSeconds, Date().timeIntervalSince(working), Date().timeIntervalSince(start)))
                 guard !result.contains("<think>"), !result.contains("</think>") else { fatalError("Thinking leaked") }
-                print("PASS native \(action.rawValue) (\(String(format: "%.2f", Date().timeIntervalSince(start)))s): \(result)")
+                print("PASS native \(action.rawValue), fresh context with cached weights")
             }
             let instructionCases: [(String, [String])] = [
                 ("translate in japanese", ["japanese"]),
@@ -107,5 +120,28 @@ private final class CancellationLimit {
         }
         guard releasedSession == nil else { fatalError("Closed preview retained native session") }
         print("PASS native session destruction after model use")
+
+        // Separate preview lifetimes exercise the production resident wrapper.
+        var loads = 0
+        let resident = ResidentModel {
+            let native = try EmbeddedInferenceSession()
+            native.onPhase = { _ in }
+            return native
+        }
+        resident.onPhase = { phase in if phase == .loading { loads += 1 } }
+        let lifecycle = ModelLifecycle()
+        let model = URL(fileURLWithPath: config.modelPath)
+        for action in [EditingAction.grammar, .rewrite] {
+            lifecycle.openPreview()
+            let text = "She dont have ticket 4821."
+            let request = try rules.request(text: text, action: action, tone: .natural)
+            _ = try EditingRules.completion(EditingJob().run(session: resident, model: model, request: request), original: text)
+            let closed = lifecycle.closePreview()
+            lifecycle.workerDrained(token: closed, now: Date())
+            guard resident.isModelLoaded, loads == 1 else { fatalError("Separate preview reloaded model") }
+        }
+        resident.unload()
+        guard !resident.isModelLoaded else { fatalError("Resident unload retained model") }
+        print("PASS separate previews reuse one real model load, then unload")
     }
 }
